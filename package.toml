@@ -1,6 +1,8 @@
 name = "tomcab"
 version = "0.1.0"
 
+auto-import = ["ghc-options"]
+
 [common.ghc-options]
     ghc-options = ["-Wall"]
 
@@ -17,14 +19,13 @@ version = "0.1.0"
         condition = "!os(windows)"
         build-depends = { unix = "< 3" }
 
-auto-import = ["ghc-options"]
-
 [[library]]
     hs-source-dirs = ["src"]
     exposed-modules = ["*"]
 
     [library.build-depends]
     base = ">= 4.14 && < 5"
+    containers = "< 1"
     directory = ">= 1.2.5.0 && < 2"
     filepath = "< 2"
     text = ">= 1 && < 3"

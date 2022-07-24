@@ -15,3 +15,8 @@ You may also install `tomcab` yourself, in which case you'll need to manually ca
 ## Usage
 
 TODO
+
+## Design
+
+* All fields in Cabal should be configurable _under the same name_
+* Helpers may be added to simplify common operations (e.g. the `github` field)

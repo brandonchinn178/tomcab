@@ -3,7 +3,7 @@
 module Wrapper (wrapCommand) where
 
 import System.Environment (getArgs)
-import Tomcab (generateCabalFiles)
+import Tomcab (runTomcab)
 
 #ifndef mingw32_HOST_OS
 import System.Posix.Process (executeFile)
@@ -13,7 +13,7 @@ import System.Process (callProcess)
 
 wrapCommand :: String -> IO ()
 wrapCommand cmd = do
-  generateCabalFiles Nothing
+  runTomcab Nothing
   execFile cmd =<< getArgs
 
 execFile :: FilePath -> [String] -> IO ()
