@@ -14,7 +14,6 @@ module Tomcab (
 
 import Control.Monad (when)
 import Data.Bifunctor (first)
-import Data.Functor.Identity (Identity)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -72,42 +71,25 @@ loadPackage fp = do
 
 data TomcabError
   = ParseError TOMLError
-  | PackageMissing Text
-  | ExecutableMissing (Maybe Text) Text
   deriving (Show)
 
 instance Exception TomcabError where
   displayException = \case
     ParseError e -> Text.unpack $ renderTOMLError e
-    PackageMissing field -> "Package missing field: " ++ Text.unpack field
-    ExecutableMissing name field ->
-      concat
-        [ "Executable"
-        , case name of
-            Nothing -> ""
-            Just name' -> " '" ++ Text.unpack name' ++ "'"
-        , " missing field: "
-        , Text.unpack field
-        ]
 
-data PackageF f = Package
-  { packageName :: f Text
-  , packageVersion :: f Text
+data Package = Package
+  { packageName :: Maybe Text
+  , packageVersion :: Maybe Text
   , packageAutoImport :: [Text]
   , packageCommonStanzas :: Map Text PackageBuildInfo
   , packageLibraries :: [PackageLibrary]
-  , packageExecutables :: [PackageExecutableF f]
+  , packageExecutables :: [PackageExecutable]
   , packageTests :: [PackageTest]
-  , packageIfs :: [Conditional RawPackage]
+  , packageIfs :: [Conditional Package]
   }
+  deriving (Show)
 
-type RawPackage = PackageF Maybe
-deriving instance Show RawPackage
-
-type Package = PackageF Identity
-deriving instance Show Package
-
-instance DecodeTOML RawPackage where
+instance DecodeTOML Package where
   tomlDecoder =
     Package
       <$> getFieldOpt "name"
@@ -155,21 +137,16 @@ instance DecodeTOML PackageLibrary where
       <*> tomlDecoder
       <*> (fromMaybe [] <$> getFieldOpt "if")
 
-data PackageExecutableF f = PackageExecutable
+data PackageExecutable = PackageExecutable
   { packageExeImport :: [Text]
-  , packageExeName :: f Text
-  , packageExeMainIs :: f Text
+  , packageExeName :: Maybe Text
+  , packageExeMainIs :: Maybe Text
   , packageExeInfo :: PackageBuildInfo
-  , packageExeIfs :: [Conditional RawPackageExecutable]
+  , packageExeIfs :: [Conditional PackageExecutable]
   }
+  deriving (Show)
 
-type RawPackageExecutable = PackageExecutableF Maybe
-deriving instance Show RawPackageExecutable
-
-type PackageExecutable = PackageExecutableF Identity
-deriving instance Show PackageExecutable
-
-instance DecodeTOML RawPackageExecutable where
+instance DecodeTOML PackageExecutable where
   tomlDecoder =
     PackageExecutable
       <$> (fromMaybe [] <$> getFieldOpt "import")
@@ -210,32 +187,20 @@ instance DecodeTOML a => DecodeTOML (Conditional a) where
 -- TODO: support globs
 type Pattern = Text
 
-parsePackage :: Text -> Either TomcabError RawPackage
+parsePackage :: Text -> Either TomcabError Package
 parsePackage = first ParseError . decode
 
-resolvePackage :: RawPackage -> Either TomcabError Package
+resolvePackage :: Package -> Either TomcabError Package
 resolvePackage Package{..} = do
-  packageName' <- maybe (Left $ PackageMissing "name") pure packageName
-  packageVersion' <- maybe (Left $ PackageMissing "version") pure packageVersion
   packageExecutables' <- mapM resolvePackageExecutable packageExecutables
   pure
     Package
-      { packageName = pure packageName'
-      , packageVersion = pure packageVersion'
-      , packageExecutables = packageExecutables'
+      { packageExecutables = packageExecutables'
       , ..
       }
 
-resolvePackageExecutable :: RawPackageExecutable -> Either TomcabError PackageExecutable
-resolvePackageExecutable PackageExecutable{..} = do
-  packageExeName' <- maybe (Left $ ExecutableMissing Nothing "name") pure packageExeName
-  packageExeMainIs' <- maybe (Left $ ExecutableMissing (Just packageExeName') "main-is") pure packageExeMainIs
-  pure
-    PackageExecutable
-      { packageExeName = pure packageExeName'
-      , packageExeMainIs = pure packageExeMainIs'
-      , ..
-      }
+resolvePackageExecutable :: PackageExecutable -> Either TomcabError PackageExecutable
+resolvePackageExecutable = pure
 
 renderPackage :: Package -> Text
 renderPackage = Text.pack . show

@@ -20,3 +20,4 @@ TODO
 
 * All fields in Cabal should be configurable _under the same name_
 * Helpers may be added to simplify common operations (e.g. the `github` field)
+* `tomcab` will do as little validation as possible, instead generating the cabal file and letting Cabal parse and validate it as usual
