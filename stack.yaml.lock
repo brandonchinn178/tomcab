@@ -3,7 +3,14 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: toml-reader-0.1.0.0@sha256:66e2b4261739559e6d1be50391af7038610c3898bc748ce7985c4e4037b623ea,3559
+    pantry-tree:
+      size: 2411
+      sha256: 8f4be57eedd319a0af20c0f001fda8124164ae4623627127cee591c0412bca6b
+  original:
+    hackage: toml-reader-0.1.0.0
 snapshots:
 - completed:
     size: 619163

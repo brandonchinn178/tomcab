@@ -1,4 +1,7 @@
 resolver: lts-19.16
 
+extra-deps:
+  - toml-reader-0.1.0.0
+
 ghc-options:
   $locals: -Werror
