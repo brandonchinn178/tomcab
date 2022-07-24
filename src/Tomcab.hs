@@ -80,12 +80,33 @@ instance Exception TomcabError where
 data Package = Package
   { packageName :: Maybe Text
   , packageVersion :: Maybe Text
-  , packageAutoImport :: [Text]
+  , packageCabalVersion :: Maybe Text
+  -- build-type
+  -- license
+  -- license-file
+  -- license-files
+  -- copyright
+  -- author
+  -- maintainer
+  -- stability
+  -- homepage
+  -- bug-reports
+  -- package-url
+  -- synopsis
+  -- description
+  -- category
+  -- tested-with
+  -- data-files
+  -- data-dir
+  -- extra-source-files
+  -- extra-doc-files
+  -- extra-tmp-files
   , packageCommonStanzas :: Map Text PackageBuildInfo
   , packageLibraries :: [PackageLibrary]
   , packageExecutables :: [PackageExecutable]
   , packageTests :: [PackageTest]
   , packageIfs :: [Conditional Package]
+  , packageAutoImport :: [Text]
   }
   deriving (Show)
 
@@ -94,18 +115,54 @@ instance DecodeTOML Package where
     Package
       <$> getFieldOpt "name"
       <*> getFieldOpt "version"
-      <*> (fromMaybe [] <$> getFieldOpt "auto-import")
+      <*> getFieldOpt "cabal-version"
       <*> getField "common"
       <*> getField "library"
       <*> getField "executable"
       <*> getField "test-suite"
       <*> (fromMaybe [] <$> getFieldOpt "if")
+      <*> (fromMaybe [] <$> getFieldOpt "auto-import")
 
 data PackageBuildInfo = PackageBuildInfo
-  { packageGhcOptions :: [Text]
-  , packageHsSourceDirs :: [Text]
+  { packageBuildDepends :: [Text]
   , packageOtherModules :: [Pattern]
-  , packageBuildDepends :: [Text]
+  , packageHsSourceDirs :: [Text]
+  -- default-extensions
+  -- other-extensions
+  , packageDefaultLanguage :: Maybe Text
+  -- other-languages
+  -- build-tool-depends
+  -- buildable
+  , packageGhcOptions :: [Text]
+  -- ghc-prof-options
+  -- ghc-shared-options
+  -- ghcjs-options
+  -- ghcjs-prof-options
+  -- ghcjs-shared-options
+  -- includes
+  -- install-includes
+  -- include-dirs
+  -- c-sources
+  -- cxx-sources
+  -- asm-sources
+  -- cmm-sources
+  -- js-sources
+  -- extra-libraries
+  -- extra-ghci-libraries
+  -- extra-bundled-libraries
+  -- extra-lib-dirs
+  -- extra-library-flavours
+  -- extra-dynamic-library-flavours
+  -- cc-options
+  -- cpp-options
+  -- cxx-options
+  -- cmm-options
+  -- asm-options
+  -- ld-options
+  -- pkgconfig-depends
+  -- frameworks
+  -- extra-framework-dirs
+  -- mixins
   , packageBuildInfoIfs :: [Conditional PackageBuildInfo]
   }
   deriving (Show)
@@ -113,10 +170,11 @@ data PackageBuildInfo = PackageBuildInfo
 instance DecodeTOML PackageBuildInfo where
   tomlDecoder =
     PackageBuildInfo
-      <$> (fromMaybe [] <$> getFieldOpt "ghc-options")
-      <*> (fromMaybe [] <$> getFieldOpt "hs-source-dirs")
+      <$> (either buildDependsFromTable id . fromMaybe (Right []) <$> getFieldOpt "build-depends")
       <*> (fromMaybe [] <$> getFieldOpt "other-modules")
-      <*> (either buildDependsFromTable id . fromMaybe (Right []) <$> getFieldOpt "build-depends")
+      <*> (fromMaybe [] <$> getFieldOpt "hs-source-dirs")
+      <*> getFieldOpt "default-language"
+      <*> (fromMaybe [] <$> getFieldOpt "ghc-options")
       <*> (fromMaybe [] <$> getFieldOpt "if")
     where
       buildDependsFromTable = map (\(k, v) -> k <> " " <> v) . Map.toList
@@ -124,6 +182,11 @@ instance DecodeTOML PackageBuildInfo where
 data PackageLibrary = PackageLibrary
   { packageLibraryName :: Maybe Text
   , packageExposedModules :: [Pattern]
+  -- virtual-modules
+  -- exposed
+  -- visibility
+  -- reexported-modules
+  -- signatures
   , packageLibraryInfo :: PackageBuildInfo
   , packageLibraryIfs :: [Conditional PackageLibrary]
   }
@@ -155,6 +218,7 @@ instance DecodeTOML PackageExecutable where
       <*> tomlDecoder
       <*> (fromMaybe [] <$> getFieldOpt "if")
 
+-- TODO
 data PackageTest = PackageTest Value
   deriving (Show)
 

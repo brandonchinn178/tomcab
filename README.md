@@ -14,7 +14,27 @@ You may also install `tomcab` yourself, in which case you'll need to manually ca
 
 ## Usage
 
-TODO
+Here's an example `package.toml` file:
+
+```toml
+# TODO
+```
+
+All of the normal Cabal fields are represented by the exact same names, and are propagated through transparently. In the TOML format, all indentation is optional, but the above format is recommended to optimize readability.
+
+Additionally, there are a few extra fields that are supported by `tomcab`:
+
+| Field         | Description |
+|---------------|-------------|
+| `extends`     | TODO        |
+| `auto-import` | TODO        |
+| `github`      | TODO        |
+
+Most fields are simply represented as a String, but fields that take in a list of Strings must be a list; e.g. you can't simply do `hs-source-dirs = "src"`, you have to do `hs-source-dirs = ["src"]`.
+
+Here is a list of some notable fields with different syntax:
+* `build-depends`: TODO
+* `if`: TODO
 
 ## Design
 

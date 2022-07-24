@@ -1,10 +1,13 @@
+cabal-version = "2.2"
+
 name = "tomcab"
 version = "0.1.0"
 
-auto-import = ["ghc-options"]
+auto-import = ["defaults"]
 
-[common.ghc-options]
+[common.defaults]
     ghc-options = ["-Wall"]
+    default-language = "Haskell2010"
 
 [common.wrapper-exe]
     hs-source-dirs = ["exe"]
