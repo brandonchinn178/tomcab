@@ -311,4 +311,19 @@ resolvePackageExecutable PackageExecutable{..} = do
       }
 
 renderPackage :: Package -> Text
-renderPackage = Text.pack . show
+renderPackage pkg@Package{..} =
+  joinLines
+    [ field "cabal-version" packageCabalVersion
+    , "\n"
+    , field "name" packageName
+    , field "version" packageVersion
+    , "\n"
+    , Text.pack $ show pkg
+    ]
+  where
+    -- ["a", "", "b", "\n", "c"] => "a\nb\n\nc"
+    joinLines = Text.unlines . map (\s -> if s == "\n" then "" else s) . filter (not . Text.null)
+
+    field label = \case
+      Nothing -> ""
+      Just v -> label <> ": " <> v
