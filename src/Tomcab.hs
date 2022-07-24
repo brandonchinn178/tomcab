@@ -67,7 +67,7 @@ loadPackage :: FilePath -> IO Package
 loadPackage fp = do
   pkg <- fromEither . parsePackage =<< Text.readFile fp
   -- TODO: loadPackage all files mentioned in `extends`
-  fromEither $ resolvePackage pkg
+  resolvePackage pkg
 
 data TomcabError
   = ParseError TOMLError
@@ -254,17 +254,40 @@ type Pattern = Text
 parsePackage :: Text -> Either TomcabError Package
 parsePackage = first ParseError . decode
 
-resolvePackage :: Package -> Either TomcabError Package
+resolvePackage :: Package -> IO Package
 resolvePackage Package{..} = do
+  -- TODO: manually merge auto-imports into all `imports` sections
+  -- TODO: pass all common stanzas to resolve functions
+  packageLibraries' <- mapM resolvePackageLibrary packageLibraries
   packageExecutables' <- mapM resolvePackageExecutable packageExecutables
   pure
     Package
-      { packageExecutables = packageExecutables'
+      { packageCabalVersion = Just $ fromMaybe "1.12" packageCabalVersion
+      , packageLibraries = packageLibraries'
+      , packageExecutables = packageExecutables'
       , ..
       }
 
-resolvePackageExecutable :: PackageExecutable -> Either TomcabError PackageExecutable
-resolvePackageExecutable = pure
+resolvePackageLibrary :: PackageLibrary -> IO PackageLibrary
+resolvePackageLibrary PackageLibrary{..} = do
+  -- TODO: inline common stanzas
+  -- TODO: load all files in hs-source-dirs
+  -- TODO: resolve exposed-modules / other-modules
+  pure
+    PackageLibrary
+      { packageExposedModules = packageExposedModules
+      , ..
+      }
+
+resolvePackageExecutable :: PackageExecutable -> IO PackageExecutable
+resolvePackageExecutable PackageExecutable{..} = do
+  -- TODO: inline common stanzas
+  -- TODO: load all files in hs-source-dirs
+  -- TODO: resolve exposed-modules / other-modules
+  pure
+    PackageExecutable
+      { ..
+      }
 
 renderPackage :: Package -> Text
 renderPackage = Text.pack . show

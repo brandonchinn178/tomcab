@@ -1,5 +1,3 @@
-cabal-version = "2.2"
-
 name = "tomcab"
 version = "0.1.0"
 

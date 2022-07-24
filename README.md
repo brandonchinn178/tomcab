@@ -32,8 +32,16 @@ Additionally, there are a few extra fields that are supported by `tomcab`:
 
 Most fields are simply represented as a String, but fields that take in a list of Strings must be a list; e.g. you can't simply do `hs-source-dirs = "src"`, you have to do `hs-source-dirs = ["src"]`.
 
-Here is a list of some notable fields with different syntax:
+Here is a list of some notable fields with different functionality or syntax:
+
+* `cabal-version`: will be set to `1.12` unless explicitly specified
+
+* `exposed-modules`/`other-modules`: These fields support glob patterns, which automatically search through `hs-source-dirs` and include any found module in the closest matching pattern.
+    * `*` must ONLY be at the end; e.g. `Foo.*`
+    * If both `Foo.*` and `Foo.Bar` are specified, `Foo` will match `Foo.*`, `Foo.Bar` will match `Foo.Bar`, and `Foo.Bar.Baz` will match `Foo.*`.
+
 * `build-depends`: TODO
+
 * `if`: TODO
 
 ## Design
