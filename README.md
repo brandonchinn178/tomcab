@@ -20,7 +20,7 @@ Here's an example `package.toml` file:
 # TODO
 ```
 
-All of the normal Cabal fields are represented by the exact same names, and are propagated through transparently. In the TOML format, all indentation is optional, but the above format is recommended to optimize readability.
+All of the normal Cabal fields are represented by the exact same names, and are propagated through transparently. In the TOML format, all indentation is optional, but the format that will be used in this guide is recommended to optimize readability.
 
 Additionally, there are a few extra fields that are supported by `tomcab`:
 
@@ -40,9 +40,79 @@ Here is a list of some notable fields with different functionality or syntax:
     * `*` must ONLY be at the end; e.g. `Foo.*`
     * If both `Foo.*` and `Foo.Bar` are specified, `Foo` will match `Foo.*`, `Foo.Bar` will match `Foo.Bar`, and `Foo.Bar.Baz` will match `Foo.*`.
 
-* `build-depends`: TODO
+* `build-depends`: Can either be a list of strings as normal, or a table mapping library to version constraints. For example, the following are all equivalent:
 
-* `if`: TODO
+    ```toml
+    [[library]]
+        build-depends = [
+            "base > 4",
+            "text"
+        ]
+
+    [[library]]
+        [library.build-depends]
+        base = "> 4"
+        text = ""
+
+    # inline table instead of table section
+    [[library]]
+        build-depends = { base = "> 4", text = "" }
+
+    # nested keys instead of table
+    [[library]]
+        build-depends.base = "> 4"
+        build-depends.text = ""
+    ```
+
+* `if`: If-statements can be added to the top-level or any of the `library`/`executable`/`test-suite` sections. Since a section can have multiple if-statements, it's represented as a list.
+
+    * For simple if-statements, you can just specify `condition` and the fields as normal:
+
+    ```toml
+    [[library]]
+        [[library.if]]
+            condition = "impl(ghc > 8.0)"
+            build-depends = [...]
+            ghc-options = [...]
+    ```
+
+    * You can always use this more formal syntax, which supports both `elif` and `else`:
+
+    ```toml
+    [[library]]
+        [[library.if]]
+            condition = "impl(ghc > 8.0)"
+            then.build-depends = [...]
+            then.ghc-options = [...]
+
+            # optional
+            else.build-depends = [...]
+            else.ghc-options = [...]
+
+        [[library.if]]
+            condition = "impl(ghc > 8.0)"
+
+            [library.if.then]
+            build-depends = [...]
+            ghc-options = [...]
+
+            # optional
+            [[library.if.elif]]
+            condition = "impl(ghc > 8.4)"
+            build-depends = [...]
+            ghc-options = [...]
+
+            # optional
+            [[library.if.elif]]
+            condition = "impl(ghc > 8.6)"
+            build-depends = [...]
+            ghc-options = [...]
+
+            # optional
+            [library.if.else]
+            build-depends = [...]
+            ghc-options = [...]
+    ```
 
 ## Design
 
