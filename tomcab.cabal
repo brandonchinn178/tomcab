@@ -1,0 +1,57 @@
+cabal-version: 2.2
+
+name: tomcab
+version: 0.1.0
+
+library
+  exposed-modules:
+      Tomcab
+  hs-source-dirs:
+      src
+  build-depends:
+      base >=4.14 && <5
+
+  ghc-options: -Wall
+  if impl(ghc >= 8.0)
+    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
+  if impl(ghc < 8.8)
+    ghc-options: -Wnoncanonical-monadfail-instances
+  default-language: Haskell2010
+
+executable tomcab
+  main-is: Main.hs
+  hs-source-dirs: exe
+  build-depends:
+      base >=4.14 && <5
+    , tomcab
+
+  ghc-options: -Wall
+  if impl(ghc >= 8.0)
+    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
+  if impl(ghc < 8.8)
+    ghc-options: -Wnoncanonical-monadfail-instances
+  default-language: Haskell2010
+
+common wrapper-exe
+  hs-source-dirs: exe
+  other-modules: Wrapper
+  build-depends:
+      base >=4.14 && <5
+    , process
+    , unix <3
+    , tomcab
+
+  ghc-options: -Wall
+  if impl(ghc >= 8.0)
+    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
+  if impl(ghc < 8.8)
+    ghc-options: -Wnoncanonical-monadfail-instances
+  default-language: Haskell2010
+
+executable stack-tomcab
+  import: wrapper-exe
+  main-is: Stack.hs
+
+executable cabal-tomcab
+  import: wrapper-exe
+  main-is: Cabal.hs

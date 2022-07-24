@@ -1,0 +1,46 @@
+name = "tomcab"
+version = "0.1.0"
+
+[common.ghc-options]
+    ghc-options = ["-Wall"]
+
+[common.wrapper-exe]
+    hs-source-dirs = ["exe"]
+    other-modules = ["Wrapper"]
+
+    [common.wrapper-exe.build-depends]
+    base = ">= 4.14 && < 5"
+    process = "< 2"
+    tomcab = ""
+
+    [[common.wrapper-exe.if]]
+        condition = "!os(windows)"
+        build-depends = { unix = "< 3" }
+
+auto-import = ["ghc-options"]
+
+[[library]]
+    exposed-modules = ["*"]
+    hs-source-dirs = ["src"]
+
+    [library.build-depends]
+    base = ">= 4.14 && < 5"
+
+[[executable]]
+    name = "tomcab"
+    main-is = "Main.hs"
+    hs-source-dirs = ["exe"]
+
+    [executable.build-depends]
+    base = ">= 4.14 && < 5"
+    tomcab = ""
+
+[[executable]]
+    import = "wrapper-exe"
+    name = "stack-tomcab"
+    main-is = "Stack.hs"
+
+[[executable]]
+    import = "wrapper-exe"
+    name = "cabal-tomcab"
+    main-is = "Cabal.hs"
