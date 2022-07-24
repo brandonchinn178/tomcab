@@ -26,7 +26,7 @@ auto-import = ["defaults"]
 
     [library.build-depends]
     base = ">= 4.14 && < 5"
-    containers = "< 1"
+    containers = ">= 0.5.8 && < 1"
     directory = ">= 1.2.5.0 && < 2"
     filepath = "< 2"
     text = ">= 1 && < 3"

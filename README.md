@@ -20,19 +20,9 @@ Here's an example `package.toml` file:
 # TODO
 ```
 
-All of the normal Cabal fields are represented by the exact same names, and are propagated through transparently. In the TOML format, all indentation is optional, but the format that will be used in this guide is recommended to optimize readability.
+In the TOML format, all indentation is optional, but the format that will be used in this guide is recommended to optimize readability.
 
-Additionally, there are a few extra fields that are supported by `tomcab`:
-
-| Field         | Description |
-|---------------|-------------|
-| `extends`     | TODO        |
-| `auto-import` | TODO        |
-| `github`      | TODO        |
-
-Most fields are simply represented as a String, but fields that take in a list of Strings must be a list; e.g. you can't simply do `hs-source-dirs = "src"`, you have to do `hs-source-dirs = ["src"]`.
-
-Here is a list of some notable fields with different functionality or syntax:
+With some exceptions, all fields should be either a String or a list of String, which will be set in the Cabal field verbatim (with lists concatenated with commas). Some fields are handled specially, with different functionality or syntax:
 
 * `cabal-version`: will be set to `1.12` unless explicitly specified
 
@@ -113,6 +103,16 @@ Here is a list of some notable fields with different functionality or syntax:
             build-depends = [...]
             ghc-options = [...]
     ```
+
+* `common` stanzas are explicitly inlined into the Cabal file, to support older Cabal versions, as well as making the semantics of some of these special fields sensical. For example, setting `other-modules` to glob patterns in a common stanza will resolve `other-modules` in the context of each stanza the common stanza is imported in.
+
+Additionally, there are a few extra fields that are supported by `tomcab`:
+
+| Field         | Description |
+|---------------|-------------|
+| `extends`     | TODO        |
+| `auto-import` | TODO        |
+| `github`      | TODO        |
 
 ## Design
 

@@ -12,18 +12,33 @@ module Tomcab (
   generateCabalFile,
 ) where
 
+import Control.Applicative ((<|>))
 import Control.Monad (when)
 import Data.Bifunctor (first)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe, isJust)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import System.Directory (doesDirectoryExist, getCurrentDirectory, listDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeFileName, (</>))
-import TOML (DecodeTOML (..), TOMLError, Value, decode, getArrayOf, getField, getFieldOpt, getFieldWith, renderTOMLError)
+import TOML (
+  Decoder,
+  DecodeTOML (..),
+  TOMLError,
+  Value (Table),
+  decode,
+  getArrayOf,
+  getField,
+  getFieldOpt,
+  getFieldWith,
+  makeDecoder,
+  renderTOMLError,
+  runDecoder,
+ )
 import UnliftIO.Exception (Exception (..), fromEither, handleAny)
 
 runTomcab :: Maybe [FilePath] -> IO ()
@@ -81,142 +96,131 @@ data Package = Package
   { packageName :: Maybe Text
   , packageVersion :: Maybe Text
   , packageCabalVersion :: Maybe Text
-  -- build-type
-  -- license
-  -- license-file
-  -- license-files
-  -- copyright
-  -- author
-  -- maintainer
-  -- stability
-  -- homepage
-  -- bug-reports
-  -- package-url
-  -- synopsis
-  -- description
-  -- category
-  -- tested-with
-  -- data-files
-  -- data-dir
-  -- extra-source-files
-  -- extra-doc-files
-  -- extra-tmp-files
-  , packageCommonStanzas :: Map Text PackageBuildInfo
+  , packageCommonStanzas :: Map Text CommonStanza
   , packageLibraries :: [PackageLibrary]
   , packageExecutables :: [PackageExecutable]
   , packageTests :: [PackageTest]
   , packageIfs :: [Conditional Package]
   , packageAutoImport :: [Text]
+  , packageFields :: CabalFields
   }
   deriving (Show)
 
 instance DecodeTOML Package where
-  tomlDecoder =
-    Package
-      <$> getFieldOpt "name"
-      <*> getFieldOpt "version"
-      <*> getFieldOpt "cabal-version"
-      <*> getField "common"
-      <*> getField "library"
-      <*> getField "executable"
-      <*> getField "test-suite"
-      <*> (fromMaybe [] <$> getFieldOpt "if")
-      <*> (fromMaybe [] <$> getFieldOpt "auto-import")
+  tomlDecoder = do
+    unused <- getAllExcept
+      [ "name"
+      , "version"
+      , "cabal-version"
+      , "common"
+      , "library"
+      , "executable"
+      , "test-suite"
+      , "if"
+      , "auto-import"
+      ]
+    package <-
+      Package
+        <$> getFieldOpt "name"
+        <*> getFieldOpt "version"
+        <*> getFieldOpt "cabal-version"
+        <*> getField "common"
+        <*> getField "library"
+        <*> getField "executable"
+        <*> getField "test-suite"
+        <*> getFieldOr "if" []
+        <*> getFieldOr "auto-import" []
+        <*> pure Map.empty
 
-data PackageBuildInfo = PackageBuildInfo
-  { packageBuildDepends :: [Text]
-  , packageOtherModules :: [Pattern]
-  , packageHsSourceDirs :: [Text]
-  -- default-extensions
-  -- other-extensions
-  , packageDefaultLanguage :: Maybe Text
-  -- other-languages
-  -- build-tool-depends
-  -- buildable
-  , packageGhcOptions :: [Text]
-  -- ghc-prof-options
-  -- ghc-shared-options
-  -- ghcjs-options
-  -- ghcjs-prof-options
-  -- ghcjs-shared-options
-  -- includes
-  -- install-includes
-  -- include-dirs
-  -- c-sources
-  -- cxx-sources
-  -- asm-sources
-  -- cmm-sources
-  -- js-sources
-  -- extra-libraries
-  -- extra-ghci-libraries
-  -- extra-bundled-libraries
-  -- extra-lib-dirs
-  -- extra-library-flavours
-  -- extra-dynamic-library-flavours
-  -- cc-options
-  -- cpp-options
-  -- cxx-options
-  -- cmm-options
-  -- asm-options
-  -- ld-options
-  -- pkgconfig-depends
-  -- frameworks
-  -- extra-framework-dirs
-  -- mixins
-  , packageBuildInfoIfs :: [Conditional PackageBuildInfo]
+    fields <- mapM (applyDecoder tomlDecoder) unused
+
+    pure package{packageFields = fields}
+
+type CabalFields = Map Text CabalValue
+
+data CabalValue
+   = CabalValue Text
+   | CabalListValue [Text]
+   deriving (Show)
+
+instance DecodeTOML CabalValue where
+  tomlDecoder = (CabalValue <$> tomlDecoder) <|> (CabalListValue <$> tomlDecoder)
+
+data PackageBuildInfo a = PackageBuildInfo
+  { packageImport :: [Text]
+  , packageBuildDepends :: [Text]
+  , packageInfoIfs :: [Conditional a]
+  , packageInfoFields :: CabalFields
   }
   deriving (Show)
 
-instance DecodeTOML PackageBuildInfo where
-  tomlDecoder =
-    PackageBuildInfo
-      <$> (either buildDependsFromTable id . fromMaybe (Right []) <$> getFieldOpt "build-depends")
-      <*> (fromMaybe [] <$> getFieldOpt "other-modules")
-      <*> (fromMaybe [] <$> getFieldOpt "hs-source-dirs")
-      <*> getFieldOpt "default-language"
-      <*> (fromMaybe [] <$> getFieldOpt "ghc-options")
-      <*> (fromMaybe [] <$> getFieldOpt "if")
+instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
+  tomlDecoder = do
+    remainingFields <- getAllExcept ["import", "build-depends", "if"]
+    info <-
+      PackageBuildInfo
+        <$> getFieldOr "import" []
+        <*> (either buildDependsFromTable id . fromMaybe (Right []) <$> getFieldOpt "build-depends")
+        <*> getFieldOr "if" []
+        <*> pure Map.empty
+
+    fields <- mapM (applyDecoder tomlDecoder) remainingFields
+
+    pure info{packageInfoFields = fields}
     where
       buildDependsFromTable = map (\(k, v) -> k <> " " <> v) . Map.toList
+
+emptyPackageBuildInfo :: PackageBuildInfo a
+emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty
+
+decodePackageBuildInfo :: DecodeTOML a => Map Text Value -> Decoder (PackageBuildInfo a)
+decodePackageBuildInfo = applyDecoder tomlDecoder . Table
+
+data CommonStanza = CommonStanza
+  { commonStanzaInfo :: PackageBuildInfo CommonStanza
+  }
+  deriving (Show)
+
+instance DecodeTOML CommonStanza where
+  tomlDecoder = CommonStanza <$> tomlDecoder
 
 data PackageLibrary = PackageLibrary
   { packageLibraryName :: Maybe Text
   , packageExposedModules :: [Pattern]
-  -- virtual-modules
-  -- exposed
-  -- visibility
-  -- reexported-modules
-  -- signatures
-  , packageLibraryInfo :: PackageBuildInfo
-  , packageLibraryIfs :: [Conditional PackageLibrary]
+  , packageLibraryInfo :: PackageBuildInfo PackageLibrary
   }
   deriving (Show)
 
 instance DecodeTOML PackageLibrary where
-  tomlDecoder =
-    PackageLibrary
-      <$> getFieldOpt "name"
-      <*> (fromMaybe [] <$> getFieldOpt "exposed-modules")
-      <*> tomlDecoder
-      <*> (fromMaybe [] <$> getFieldOpt "if")
+  tomlDecoder = do
+    remainingFields <- getAllExcept ["name", "exposed-modules"]
+    library <-
+      PackageLibrary
+        <$> getFieldOpt "name"
+        <*> getFieldOr "exposed-modules" []
+        <*> pure emptyPackageBuildInfo
+
+    info <- decodePackageBuildInfo remainingFields
+
+    pure library{packageLibraryInfo = info}
 
 data PackageExecutable = PackageExecutable
-  { packageExeImport :: [Text]
-  , packageExeName :: Maybe Text
-  , packageExeMainIs :: Maybe Text
-  , packageExeInfo :: PackageBuildInfo
-  , packageExeIfs :: [Conditional PackageExecutable]
+  { packageExeName :: Maybe Text
+  , packageExeInfo :: PackageBuildInfo PackageExecutable
   }
   deriving (Show)
 
 instance DecodeTOML PackageExecutable where
-  tomlDecoder =
-    PackageExecutable
-      <$> (fromMaybe [] <$> getFieldOpt "import")
-      <*> getFieldOpt "name"
-      <*> getFieldOpt "main-is"
-      <*> tomlDecoder
-      <*> (fromMaybe [] <$> getFieldOpt "if")
+  tomlDecoder = do
+    remainingFields <- getAllExcept ["name"]
+    exe <-
+      PackageExecutable
+        <$> getFieldOpt "name"
+        <*> pure emptyPackageBuildInfo
+
+    info <- decodePackageBuildInfo remainingFields
+
+    pure exe{packageExeInfo = info}
 
 -- TODO
 data PackageTest = PackageTest Value
@@ -235,10 +239,15 @@ data Conditional a = Conditional
 
 instance DecodeTOML a => DecodeTOML (Conditional a) where
   tomlDecoder = do
+    remainingFields <- getAllExcept ["condition"]
     condition <- getField "condition"
     (conditionThen, conditionElif, conditionElse) <- do
       getFieldOpt "then" >>= \case
-        Nothing -> (,,) <$> tomlDecoder <*> pure [] <*> pure Nothing
+        Nothing ->
+          (,,)
+            <$> applyDecoder tomlDecoder (Table remainingFields)
+            <*> pure []
+            <*> pure Nothing
         Just conditionThen -> do
           (,,)
             <$> pure conditionThen
@@ -247,6 +256,18 @@ instance DecodeTOML a => DecodeTOML (Conditional a) where
     pure Conditional{..}
     where
       decodeElif = (,) <$> getField "condition" <*> tomlDecoder
+
+-- https://github.com/brandonchinn178/toml-reader/issues/12
+getAllExcept :: [Text] -> Decoder (Map Text Value)
+getAllExcept keys = (`Map.withoutKeys` Set.fromList keys) <$> tomlDecoder
+
+-- https://github.com/brandonchinn178/toml-reader/issues/11
+applyDecoder :: Decoder a -> Value -> Decoder a
+applyDecoder d v = makeDecoder $ \_ -> runDecoder d v
+
+-- https://github.com/brandonchinn178/toml-reader/issues/10
+getFieldOr :: DecodeTOML a => Text -> a -> Decoder a
+getFieldOr key def = fromMaybe def <$> getFieldOpt key
 
 -- TODO: support globs
 type Pattern = Text
