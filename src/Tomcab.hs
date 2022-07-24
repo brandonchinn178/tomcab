@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -13,8 +14,9 @@ module Tomcab (
 ) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (when)
+import Control.Monad (when, (>=>))
 import Data.Bifunctor (first)
+import Data.Functor.Identity (runIdentity)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -39,7 +41,7 @@ import TOML (
   renderTOMLError,
   runDecoder,
  )
-import UnliftIO.Exception (Exception (..), fromEither, handleAny)
+import UnliftIO.Exception (Exception (..), fromEither, handleAny, throwIO)
 
 runTomcab :: Maybe [FilePath] -> IO ()
 runTomcab = \case
@@ -86,17 +88,19 @@ loadPackage fp = do
 
 data TomcabError
   = ParseError TOMLError
+  | UnknownCommonStanza Text
   deriving (Show)
 
 instance Exception TomcabError where
   displayException = \case
     ParseError e -> Text.unpack $ renderTOMLError e
+    UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
 
 data Package = Package
   { packageName :: Maybe Text
   , packageVersion :: Maybe Text
   , packageCabalVersion :: Maybe Text
-  , packageCommonStanzas :: Map Text CommonStanza
+  , packageCommonStanzas :: CommonStanzas
   , packageLibraries :: [PackageLibrary]
   , packageExecutables :: [PackageExecutable]
   , packageTests :: [PackageTest]
@@ -136,6 +140,8 @@ instance DecodeTOML Package where
 
     pure package{packageFields = fields}
 
+{----- Shared build information -----}
+
 type CabalFields = Map Text CabalValue
 
 data CabalValue
@@ -149,10 +155,11 @@ instance DecodeTOML CabalValue where
 data PackageBuildInfo a = PackageBuildInfo
   { packageImport :: [Text]
   , packageBuildDepends :: [Text]
+  , packageHsSourceDirs :: [Text]
   , packageInfoIfs :: [Conditional a]
   , packageInfoFields :: CabalFields
   }
-  deriving (Show)
+  deriving (Show, Functor)
 
 instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
   tomlDecoder = do
@@ -161,6 +168,7 @@ instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
       PackageBuildInfo
         <$> getFieldOr "import" []
         <*> (either buildDependsFromTable id . fromMaybe (Right []) <$> getFieldOpt "build-depends")
+        <*> getFieldOr "hs-source-dirs" []
         <*> getFieldOr "if" []
         <*> pure Map.empty
 
@@ -170,11 +178,44 @@ instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
     where
       buildDependsFromTable = map (\(k, v) -> k <> " " <> v) . Map.toList
 
+class HasPackageBuildInfo a where
+  modifyBuildInfo :: (PackageBuildInfo a -> PackageBuildInfo a) -> (a -> a)
+  modifyBuildInfo f = runIdentity . modifyBuildInfoM (pure . f)
+
+  modifyBuildInfoM :: Monad m => (PackageBuildInfo a -> m (PackageBuildInfo a)) -> (a -> m a)
+
+class FromCommonStanza a where
+  fromCommonStanza :: CommonStanza -> a
+
+mergeCommonStanza ::
+  (HasPackageBuildInfo a, FromCommonStanza a) =>
+  CommonStanza ->
+  PackageBuildInfo a ->
+  PackageBuildInfo a
+mergeCommonStanza (CommonStanza commonInfo) info =
+  PackageBuildInfo
+    { packageImport = packageImport commonInfo <> packageImport info
+    , packageBuildDepends = packageBuildDepends commonInfo <> packageBuildDepends info
+    , packageHsSourceDirs = packageHsSourceDirs commonInfo <> packageHsSourceDirs info
+    , packageInfoIfs = map upcastConditional (packageInfoIfs commonInfo) <> packageInfoIfs info
+    , -- union is left-biased; info fields should override commonInfo fields
+      packageInfoFields = packageInfoFields info `Map.union` packageInfoFields commonInfo
+    }
+  where
+    upcastConditional cond =
+      cond
+        { conditionThen = fromCommonStanza (conditionThen cond)
+        , conditionElif = map (fmap fromCommonStanza) (conditionElif cond)
+        , conditionElse = fmap fromCommonStanza (conditionElse cond)
+        }
+
 emptyPackageBuildInfo :: PackageBuildInfo a
-emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty
+emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty mempty
 
 decodePackageBuildInfo :: DecodeTOML a => Map Text Value -> Decoder (PackageBuildInfo a)
 decodePackageBuildInfo = applyDecoder tomlDecoder . Table
+
+type CommonStanzas = Map Text CommonStanza
 
 data CommonStanza = CommonStanza
   { commonStanzaInfo :: PackageBuildInfo CommonStanza
@@ -183,6 +224,8 @@ data CommonStanza = CommonStanza
 
 instance DecodeTOML CommonStanza where
   tomlDecoder = CommonStanza <$> tomlDecoder
+
+{----- Components -----}
 
 data PackageLibrary = PackageLibrary
   { packageLibraryName :: Maybe Text
@@ -204,6 +247,18 @@ instance DecodeTOML PackageLibrary where
 
     pure library{packageLibraryInfo = info}
 
+instance HasPackageBuildInfo PackageLibrary where
+  modifyBuildInfoM f lib = do
+    info <- f (packageLibraryInfo lib)
+    pure lib{packageLibraryInfo = info}
+
+instance FromCommonStanza PackageLibrary where
+  fromCommonStanza (CommonStanza info) =
+    PackageLibrary
+      mempty
+      mempty
+      (fromCommonStanza <$> info)
+
 data PackageExecutable = PackageExecutable
   { packageExeName :: Maybe Text
   , packageExeInfo :: PackageBuildInfo PackageExecutable
@@ -222,6 +277,17 @@ instance DecodeTOML PackageExecutable where
 
     pure exe{packageExeInfo = info}
 
+instance HasPackageBuildInfo PackageExecutable where
+  modifyBuildInfoM f exe = do
+    info <- f (packageExeInfo exe)
+    pure exe{packageExeInfo = info}
+
+instance FromCommonStanza PackageExecutable where
+  fromCommonStanza (CommonStanza info) =
+    PackageExecutable
+      mempty
+      (fromCommonStanza <$> info)
+
 -- TODO
 data PackageTest = PackageTest Value
   deriving (Show)
@@ -235,7 +301,7 @@ data Conditional a = Conditional
   , conditionElif :: [(Text, a)]
   , conditionElse :: Maybe a
   }
-  deriving (Show)
+  deriving (Show, Functor)
 
 instance DecodeTOML a => DecodeTOML (Conditional a) where
   tomlDecoder = do
@@ -276,39 +342,65 @@ parsePackage :: Text -> Either TomcabError Package
 parsePackage = first ParseError . decode
 
 resolvePackage :: Package -> IO Package
-resolvePackage Package{..} = do
-  -- TODO: manually merge auto-imports into all `imports` sections
-  -- TODO: pass all common stanzas to resolve functions
-  packageLibraries' <- mapM resolvePackageLibrary packageLibraries
-  packageExecutables' <- mapM resolvePackageExecutable packageExecutables
-  pure
-    Package
-      { packageCabalVersion = Just $ fromMaybe "1.12" packageCabalVersion
-      , packageLibraries = packageLibraries'
-      , packageExecutables = packageExecutables'
-      , ..
-      }
+resolvePackage =
+  (foldr (>=>) pure)
+    [ resolveDefaults
+    , resolveAutoImports
+    , resolveImports
+    , resolveModules
+    ]
+  where
+    resolveDefaults pkg =
+      pure
+        pkg
+          { packageCabalVersion = Just $ fromMaybe "1.12" (packageCabalVersion pkg)
+          }
 
-resolvePackageLibrary :: PackageLibrary -> IO PackageLibrary
-resolvePackageLibrary PackageLibrary{..} = do
-  -- TODO: inline common stanzas
-  -- TODO: load all files in hs-source-dirs
-  -- TODO: resolve exposed-modules / other-modules
-  pure
-    PackageLibrary
-      { packageExposedModules = packageExposedModules
-      , ..
-      }
+    resolveAutoImports pkg = do
+      let addAutoImports info = info{packageImport = packageAutoImport pkg ++ packageImport info}
+      pure
+        pkg
+          { packageAutoImport = []
+          , packageLibraries = map (modifyBuildInfo addAutoImports) (packageLibraries pkg)
+          , packageExecutables = map (modifyBuildInfo addAutoImports) (packageExecutables pkg)
+          }
 
-resolvePackageExecutable :: PackageExecutable -> IO PackageExecutable
-resolvePackageExecutable PackageExecutable{..} = do
-  -- TODO: inline common stanzas
-  -- TODO: load all files in hs-source-dirs
-  -- TODO: resolve exposed-modules / other-modules
-  pure
-    PackageExecutable
-      { ..
-      }
+    resolveImports pkg = do
+      let commonStanzas = packageCommonStanzas pkg
+      packageLibraries' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageLibraries pkg)
+      packageExecutables' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageExecutables pkg)
+      pure
+        pkg
+          { packageCommonStanzas = Map.empty
+          , packageLibraries = packageLibraries'
+          , packageExecutables = packageExecutables'
+          }
+
+    resolveModules pkg = do
+      -- TODO: load all files in hs-source-dirs + resolve exposed-modules/other-modules
+      packageLibraries' <- mapM pure (packageLibraries pkg)
+      packageExecutables' <- mapM pure (packageExecutables pkg)
+      pure
+        pkg
+          { packageLibraries = packageLibraries'
+          , packageExecutables = packageExecutables'
+          }
+
+mergeImports ::
+  (HasPackageBuildInfo a, FromCommonStanza a) =>
+  CommonStanzas ->
+  PackageBuildInfo a ->
+  IO (PackageBuildInfo a)
+mergeImports commonStanzas info0 = go (packageImport info0) info0
+  where
+    go [] info = pure info{packageImport = []}
+    go (imp:imps) info =
+      case imp `Map.lookup` commonStanzas of
+        Nothing -> throwIO $ UnknownCommonStanza imp
+        Just commonStanza ->
+          go
+            (packageImport (commonStanzaInfo commonStanza) ++ imps)
+            (mergeCommonStanza commonStanza info)
 
 renderPackage :: Package -> Text
 renderPackage pkg@Package{..} =
