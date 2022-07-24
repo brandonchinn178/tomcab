@@ -42,12 +42,12 @@ auto-import = ["ghc-options"]
     tomcab = ""
 
 [[executable]]
-    import = "wrapper-exe"
+    import = ["wrapper-exe"]
     name = "stack-tomcab"
     main-is = "Stack.hs"
 
 [[executable]]
-    import = "wrapper-exe"
+    import = ["wrapper-exe"]
     name = "cabal-tomcab"
     main-is = "Cabal.hs"
 
