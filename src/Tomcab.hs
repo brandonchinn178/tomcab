@@ -10,7 +10,6 @@
 
 module Tomcab (
   runTomcab,
-  generateCabalFile,
 ) where
 
 import Control.Applicative ((<|>))
@@ -27,7 +26,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import System.Directory (doesDirectoryExist, getCurrentDirectory, listDirectory)
 import System.Exit (exitFailure)
-import System.FilePath (takeFileName, (</>))
+import System.FilePath (takeDirectory, takeFileName, (</>))
 import TOML (
   Decoder,
   DecodeTOML (..),
@@ -50,9 +49,13 @@ runTomcab = \case
   Nothing -> findCabalFiles >>= go
   where
     go = mapM_ $ \file ->
-      handleAny (onError file) $
-        -- TODO
-        generateCabalFile file >>= Text.putStrLn
+      handleAny (onError file) $ do
+        pkg <- loadPackage file
+        cabalPath <-
+          case packageName pkg of
+            Nothing -> throwIO MissingPackageName
+            Just name -> pure $ takeDirectory file </> (Text.unpack name ++ ".cabal")
+        Text.writeFile cabalPath (renderPackage pkg)
 
     onError file e = do
       when (isJust $ fromException @TomcabError e) $
@@ -78,9 +81,6 @@ listDirectoryRecursive fp = fmap concat . mapM (go . (fp </>)) =<< listDirectory
 
 {----- TODO: move to another module -----}
 
-generateCabalFile :: FilePath -> IO Text
-generateCabalFile = fmap renderPackage . loadPackage
-
 loadPackage :: FilePath -> IO Package
 loadPackage fp = do
   pkg <- fromEither . parsePackage =<< Text.readFile fp
@@ -89,18 +89,21 @@ loadPackage fp = do
 
 data TomcabError
   = ParseError TOMLError
+  | MissingPackageName
   | UnknownCommonStanza Text
   deriving (Show)
 
 instance Exception TomcabError where
   displayException = \case
     ParseError e -> Text.unpack $ renderTOMLError e
+    MissingPackageName -> "Package name is not specified"
     UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
 
 data Package = Package
   { packageName :: Maybe Text
   , packageVersion :: Maybe Text
   , packageCabalVersion :: Maybe Text
+  , packageBuildType :: Maybe Text
   , packageCommonStanzas :: CommonStanzas
   , packageLibraries :: [PackageLibrary]
   , packageExecutables :: [PackageExecutable]
@@ -117,6 +120,7 @@ instance DecodeTOML Package where
       [ "name"
       , "version"
       , "cabal-version"
+      , "build-type"
       , "common"
       , "library"
       , "executable"
@@ -129,6 +133,7 @@ instance DecodeTOML Package where
         <$> getFieldOpt "name"
         <*> getFieldOpt "version"
         <*> getFieldOpt "cabal-version"
+        <*> getFieldOpt "build-type"
         <*> getField "common"
         <*> getField "library"
         <*> getField "executable"
@@ -351,10 +356,12 @@ resolvePackage =
     , resolveModules
     ]
   where
-    resolveDefaults pkg =
+    resolveDefaults pkg = do
+      let defaultTo f x = Just $ fromMaybe x (f pkg)
       pure
         pkg
-          { packageCabalVersion = Just $ fromMaybe "1.12" (packageCabalVersion pkg)
+          { packageCabalVersion = packageCabalVersion `defaultTo` "1.12"
+          , packageBuildType = packageBuildType `defaultTo` "Simple"
           }
 
     resolveAutoImports pkg = do
@@ -407,17 +414,20 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
 
 renderPackage :: Package -> Text
 renderPackage Package{..} =
-  joinLines
+  stripTrailingSpaces . joinLines $
     [ renderFieldText "cabal-version" packageCabalVersion
     , "\n"
     , renderFieldText "name" packageName
     , renderFieldText "version" packageVersion
+    , renderFieldText "build-type" packageBuildType
     , renderFields packageFields
     , "\n"
     , stanzas renderLibrary packageLibraries
     , "\n"
     , stanzas renderExecutable packageExecutables
     ]
+  where
+    stripTrailingSpaces = Text.unlines . map Text.stripEnd . Text.lines
 
 renderLibrary :: PackageLibrary -> Text
 renderLibrary lib =
@@ -482,7 +492,6 @@ renderConditional renderParent Conditional{..} =
 joinLines :: [Text] -> Text
 joinLines =
   (Text.intercalate "\n" . map (\s -> if s == "\n" then "" else s)) -- unlines but don't double an explicit "\n"
-    . map (Text.dropWhileEnd (== ' ')) -- strip trailing spaces
     . filter (not . Text.null) -- remove empty lines
 
 indent :: Text -> Text

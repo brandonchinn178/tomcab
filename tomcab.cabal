@@ -1,7 +1,10 @@
-cabal-version: 2.2
+cabal-version: 1.12
 
 name: tomcab
 version: 0.1.0
+build-type: Simple
+description: Generate Cabal files from TOML files. See README.md for more details.
+synopsis: Generate Cabal files from TOML files
 
 library
   exposed-modules:
@@ -9,55 +12,60 @@ library
   hs-source-dirs:
       src
   build-depends:
-      base >=4.14 && <5
+      base >= 4.14 && < 5
     , containers >= 0.5.8 && < 1
     , directory >= 1.2.5.0 && < 2
     , filepath < 2
     , text >= 1 && < 3
     , toml-reader < 1
     , unliftio < 1
-
-  ghc-options: -Wall
-  if impl(ghc >= 8.0)
-    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
-  if impl(ghc < 8.8)
-    ghc-options: -Wnoncanonical-monadfail-instances
   default-language: Haskell2010
+  ghc-options:
+      -Wall
 
 executable tomcab
+  hs-source-dirs:
+      exe
+  build-depends:
+      base >= 4.14 && < 5
+    , tomcab
+  default-language: Haskell2010
+  ghc-options:
+      -Wall
   main-is: Main.hs
-  hs-source-dirs: exe
-  build-depends:
-      base >=4.14 && <5
-    , tomcab
-
-  ghc-options: -Wall
-  if impl(ghc >= 8.0)
-    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
-  if impl(ghc < 8.8)
-    ghc-options: -Wnoncanonical-monadfail-instances
-  default-language: Haskell2010
-
-common wrapper-exe
-  hs-source-dirs: exe
-  other-modules: Wrapper
-  build-depends:
-      base >=4.14 && <5
-    , process
-    , unix <3
-    , tomcab
-
-  ghc-options: -Wall
-  if impl(ghc >= 8.0)
-    ghc-options: -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wnoncanonical-monad-instances
-  if impl(ghc < 8.8)
-    ghc-options: -Wnoncanonical-monadfail-instances
-  default-language: Haskell2010
 
 executable stack-tomcab
-  import: wrapper-exe
+  hs-source-dirs:
+      exe
+  build-depends:
+      base >= 4.14 && < 5
+    , process < 2
+    , tomcab
+  default-language: Haskell2010
+  ghc-options:
+      -Wall
   main-is: Stack.hs
+  other-modules:
+      Wrapper
+
+  if !os(windows)
+    build-depends:
+        unix < 3
 
 executable cabal-tomcab
-  import: wrapper-exe
+  hs-source-dirs:
+      exe
+  build-depends:
+      base >= 4.14 && < 5
+    , process < 2
+    , tomcab
+  default-language: Haskell2010
+  ghc-options:
+      -Wall
   main-is: Cabal.hs
+  other-modules:
+      Wrapper
+
+  if !os(windows)
+    build-depends:
+        unix < 3
