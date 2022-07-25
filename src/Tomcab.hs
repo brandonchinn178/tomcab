@@ -32,8 +32,8 @@ import System.Directory (doesDirectoryExist, getCurrentDirectory, listDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (makeRelative, splitExtensions, takeDirectory, takeFileName, (</>))
 import TOML (
-  Decoder,
   DecodeTOML (..),
+  Decoder,
   TOMLError,
   Value (Table),
   decode,
@@ -63,7 +63,8 @@ runTomcab = \case
 
     onError file e = do
       when (isJust $ fromException @TomcabError e) $
-        putStrLn $ "tomcab failed to convert " ++ file ++ ":"
+        putStrLn $
+          "tomcab failed to convert " ++ file ++ ":"
       putStrLn $ displayException e
       exitFailure
 
@@ -134,18 +135,19 @@ data Package = Package
 
 instance DecodeTOML Package where
   tomlDecoder = do
-    unused <- getAllExcept
-      [ "name"
-      , "version"
-      , "cabal-version"
-      , "build-type"
-      , "common"
-      , "library"
-      , "executable"
-      , "test-suite"
-      , "if"
-      , "auto-import"
-      ]
+    unused <-
+      getAllExcept
+        [ "name"
+        , "version"
+        , "cabal-version"
+        , "build-type"
+        , "common"
+        , "library"
+        , "executable"
+        , "test-suite"
+        , "if"
+        , "auto-import"
+        ]
     package <-
       Package
         <$> getFieldOpt "name"
@@ -169,9 +171,9 @@ instance DecodeTOML Package where
 type CabalFields = Map Text CabalValue
 
 data CabalValue
-   = CabalValue Text
-   | CabalListValue [Text]
-   deriving (Show)
+  = CabalValue Text
+  | CabalListValue [Text]
+  deriving (Show)
 
 instance DecodeTOML CabalValue where
   tomlDecoder = (CabalValue <$> tomlDecoder) <|> (CabalListValue <$> tomlDecoder)
@@ -430,7 +432,7 @@ mergeImports ::
 mergeImports commonStanzas info0 = go (packageImport info0) info0
   where
     go [] info = pure info{packageImport = []}
-    go (imp:imps) info =
+    go (imp : imps) info =
       case imp `Map.lookup` commonStanzas of
         Nothing -> throwIO $ UnknownCommonStanza imp
         Just commonStanza ->
@@ -445,7 +447,7 @@ resolveModulePatterns :: HasPackageBuildInfo a => [ModulePattern] -> a -> IO ([M
 resolveModulePatterns exposedModules parent = do
   modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
 
-  let parseAndTagPattern tag pat = (, tag) <$> maybe (throwIO $ InvalidPattern pat) pure (parsePattern pat)
+  let parseAndTagPattern tag pat = (,tag) <$> maybe (throwIO $ InvalidPattern pat) pure (parsePattern pat)
   patterns <-
     fmap concat . sequence $
       [ mapM (parseAndTagPattern Exposed) exposedModules
@@ -619,10 +621,10 @@ renderField :: Text -> CabalValue -> Text
 renderField label = \case
   CabalValue t -> label <> ": " <> t
   CabalListValue [] -> ""
-  CabalListValue (t:ts) ->
+  CabalListValue (t : ts) ->
     joinLines
       [ label <> ":"
-      , indent . joinLines $ ("  " <> t) : map (", " <> ) ts
+      , indent . joinLines $ ("  " <> t) : map (", " <>) ts
       ]
 
 renderFields :: CabalFields -> Text
