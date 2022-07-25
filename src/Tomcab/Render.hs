@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -26,12 +26,12 @@ import Tomcab.Cabal (
 renderPackage :: Package -> Text
 renderPackage Package{..} =
   stripTrailingSpaces . joinLines $
-    [ renderFieldText "cabal-version" packageCabalVersion
+    [ field "cabal-version" packageCabalVersion
     , "\n"
-    , renderFieldText "name" packageName
-    , renderFieldText "version" packageVersion
-    , renderFieldText "build-type" packageBuildType
-    , renderFields packageFields
+    , field "name" packageName
+    , field "version" packageVersion
+    , field "build-type" packageBuildType
+    , fields packageFields
     , "\n"
     , stanzas renderLibrary packageLibraries
     , "\n"
@@ -49,7 +49,7 @@ renderLibrary lib =
   where
     renderLibraryBody PackageLibrary{..} =
       joinLines
-        [ renderField "exposed-modules" (CabalListValue $ map renderModule packageExposedModules)
+        [ field "exposed-modules" (map renderModule packageExposedModules)
         , renderBuildInfo renderLibraryBody packageLibraryInfo
         ]
 
@@ -68,10 +68,10 @@ renderExecutable exe =
 renderBuildInfo :: (a -> Text) -> PackageBuildInfo a -> Text
 renderBuildInfo renderParent PackageBuildInfo{..} =
   joinLines
-    [ renderField "other-modules" (CabalListValue $ map renderModule packageOtherModules)
-    , renderField "hs-source-dirs" (CabalListValue packageHsSourceDirs)
-    , renderField "build-depends" (CabalListValue packageBuildDepends)
-    , renderFields packageInfoFields
+    [ field "other-modules" (map renderModule packageOtherModules)
+    , field "hs-source-dirs" packageHsSourceDirs
+    , field "build-depends" packageBuildDepends
+    , fields packageInfoFields
     , joinLines $
         if null packageInfoIfs
           then []
@@ -103,6 +103,8 @@ renderConditional renderParent Conditional{..} =
 renderModule :: Module -> Text
 renderModule (Module path) = Text.intercalate "." path
 
+{----- Helpers -----}
+
 -- ["a", "b", "", "c", "\n", "d"] => "a\nb\nc\n\nd"
 joinLines :: [Text] -> Text
 joinLines =
@@ -115,20 +117,29 @@ indent = Text.intercalate "\n" . map ("  " <>) . Text.splitOn "\n"
 stanzas :: (a -> Text) -> [a] -> Text
 stanzas renderStanza = joinLines . intersperse "\n" . map renderStanza
 
-renderFieldText :: Text -> Maybe Text -> Text
-renderFieldText label = \case
-  Nothing -> ""
-  Just v -> renderField label (CabalValue v)
+class ToCabalField a where
+  toCabalFieldMaybe :: a -> Maybe CabalValue
 
-renderField :: Text -> CabalValue -> Text
-renderField label = \case
-  CabalValue t -> label <> ": " <> t
-  CabalListValue [] -> ""
-  CabalListValue (t : ts) ->
-    joinLines
-      [ label <> ":"
-      , indent . joinLines $ ("  " <> t) : map (", " <>) ts
-      ]
+instance ToCabalField CabalValue where
+  toCabalFieldMaybe = Just
+instance ToCabalField Text where
+  toCabalFieldMaybe = Just . CabalValue
+instance ToCabalField [Text] where
+  toCabalFieldMaybe = Just . CabalListValue
+instance ToCabalField a => ToCabalField (Maybe a) where
+  toCabalFieldMaybe = (>>= toCabalFieldMaybe)
 
-renderFields :: CabalFields -> Text
-renderFields = joinLines . map (uncurry renderField) . Map.toAscList
+field :: ToCabalField a => Text -> a -> Text
+field label a =
+  case toCabalFieldMaybe a of
+    Nothing -> ""
+    Just (CabalValue t) -> label <> ": " <> t
+    Just (CabalListValue []) -> ""
+    Just (CabalListValue (t : ts)) ->
+      joinLines
+        [ label <> ":"
+        , indent . joinLines $ ("  " <> t) : map (", " <>) ts
+        ]
+
+fields :: CabalFields -> Text
+fields = joinLines . map (uncurry field) . Map.toAscList
