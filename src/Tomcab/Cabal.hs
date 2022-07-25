@@ -68,7 +68,6 @@ data Package = Package
   , packageLibraries :: [PackageLibrary]
   , packageExecutables :: [PackageExecutable]
   , packageTests :: [PackageTest]
-  , packageIfs :: [Conditional Package]
   , packageAutoImport :: [Text]
   , packageFields :: CabalFields
   }
@@ -86,7 +85,6 @@ instance DecodeTOML Package where
         , "library"
         , "executable"
         , "test-suite"
-        , "if"
         , "auto-import"
         ]
     package <-
@@ -99,7 +97,6 @@ instance DecodeTOML Package where
         <*> getField "library"
         <*> getField "executable"
         <*> getField "test-suite"
-        <*> getFieldOr "if" []
         <*> getFieldOr "auto-import" []
         <*> pure Map.empty
 
