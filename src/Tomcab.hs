@@ -17,6 +17,7 @@ import Control.Applicative ((<|>))
 import Control.Monad (when, (>=>))
 import Data.Bifunctor (first)
 import Data.Functor.Identity (runIdentity)
+import Data.List (intersperse)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -163,7 +164,7 @@ data PackageBuildInfo a = PackageBuildInfo
 
 instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
   tomlDecoder = do
-    remainingFields <- getAllExcept ["import", "build-depends", "if"]
+    remainingFields <- getAllExcept ["import", "build-depends", "hs-source-dirs", "if"]
     info <-
       PackageBuildInfo
         <$> getFieldOr "import" []
@@ -402,20 +403,108 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
             (mergeCommonStanza commonStanza info)
 
+{----- Render -----}
+
 renderPackage :: Package -> Text
-renderPackage pkg@Package{..} =
+renderPackage Package{..} =
   joinLines
-    [ field "cabal-version" packageCabalVersion
+    [ renderFieldText "cabal-version" packageCabalVersion
     , "\n"
-    , field "name" packageName
-    , field "version" packageVersion
+    , renderFieldText "name" packageName
+    , renderFieldText "version" packageVersion
+    , renderFields packageFields
     , "\n"
-    , Text.pack $ show pkg
+    , stanzas renderLibrary packageLibraries
+    , "\n"
+    , stanzas renderExecutable packageExecutables
+    ]
+
+renderLibrary :: PackageLibrary -> Text
+renderLibrary lib =
+  joinLines
+    [ "library " <> fromMaybe "" (packageLibraryName lib)
+    , indent $ renderLibraryBody lib
     ]
   where
-    -- ["a", "", "b", "\n", "c"] => "a\nb\n\nc"
-    joinLines = Text.unlines . map (\s -> if s == "\n" then "" else s) . filter (not . Text.null)
+    renderLibraryBody PackageLibrary{..} =
+      joinLines
+        [ renderField "exposed-modules" (CabalListValue packageExposedModules)
+        , renderBuildInfo renderLibraryBody packageLibraryInfo
+        ]
 
-    field label = \case
-      Nothing -> ""
-      Just v -> label <> ": " <> v
+renderExecutable :: PackageExecutable -> Text
+renderExecutable exe =
+  joinLines
+    [ "executable " <> fromMaybe "" (packageExeName exe)
+    , indent $ renderExecutableBody exe
+    ]
+  where
+    renderExecutableBody PackageExecutable{..} =
+      joinLines
+        [ renderBuildInfo renderExecutableBody packageExeInfo
+        ]
+
+renderBuildInfo :: (a -> Text) -> PackageBuildInfo a -> Text
+renderBuildInfo renderParent PackageBuildInfo{..} =
+  joinLines
+    [ renderField "hs-source-dirs" (CabalListValue packageHsSourceDirs)
+    , renderField "build-depends" (CabalListValue packageBuildDepends)
+    , renderFields packageInfoFields
+    , joinLines $
+        if null packageInfoIfs
+          then []
+          else
+            [ "\n"
+            , stanzas (renderConditional renderParent) packageInfoIfs
+            ]
+    ]
+
+renderConditional :: (a -> Text) -> Conditional a -> Text
+renderConditional renderParent Conditional{..} =
+  joinLines $
+    [ "if " <> condition
+    , indent $ renderParent conditionThen
+    , joinLines $
+        flip concatMap conditionElif $ \(elifCondition, body) ->
+          [ "elif " <> elifCondition
+          , indent $ renderParent body
+          ]
+    , case conditionElse of
+        Nothing -> ""
+        Just body ->
+          joinLines
+            [ "else"
+            , indent $ renderParent body
+            ]
+    ]
+
+-- ["a", "b", "", "c", "\n", "d"] => "a\nb\nc\n\nd"
+joinLines :: [Text] -> Text
+joinLines =
+  (Text.intercalate "\n" . map (\s -> if s == "\n" then "" else s)) -- unlines but don't double an explicit "\n"
+    . map (Text.dropWhileEnd (== ' ')) -- strip trailing spaces
+    . filter (not . Text.null) -- remove empty lines
+
+indent :: Text -> Text
+indent = Text.intercalate "\n" . map ("  " <>) . Text.splitOn "\n"
+
+stanzas :: (a -> Text) -> [a] -> Text
+stanzas renderStanza = joinLines . intersperse "\n" . map renderStanza
+
+renderFieldText :: Text -> Maybe Text -> Text
+renderFieldText label = \case
+  Nothing -> ""
+  Just v -> renderField label (CabalValue v)
+
+renderField :: Text -> CabalValue -> Text
+renderField label = \case
+  CabalValue t -> label <> ": " <> t
+  CabalListValue [] -> ""
+  CabalListValue (t:ts) ->
+    joinLines
+      [ label <> ":"
+      , indent . joinLines $ ("  " <> t) : map (", " <> ) ts
+      ]
+
+renderFields :: CabalFields -> Text
+renderFields = joinLines . map (uncurry renderField) . Map.toAscList

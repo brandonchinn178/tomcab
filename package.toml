@@ -1,5 +1,7 @@
 name = "tomcab"
 version = "0.1.0"
+synopsis = "Generate Cabal files from TOML files"
+description = "Generate Cabal files from TOML files. See README.md for more details."
 
 auto-import = ["defaults"]
 
@@ -22,7 +24,7 @@ auto-import = ["defaults"]
 
 [[library]]
     hs-source-dirs = ["src"]
-    exposed-modules = ["*"]
+    exposed-modules = ["Tomcab"]
 
     [library.build-depends]
     base = ">= 4.14 && < 5"
