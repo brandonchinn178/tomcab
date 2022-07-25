@@ -12,6 +12,8 @@ library
     , Tomcab.Cabal
     , Tomcab.Cabal.Module
     , Tomcab.Render
+    , Tomcab.Resolve
+    , Tomcab.Utils.FilePath
   hs-source-dirs:
       src
   build-depends:

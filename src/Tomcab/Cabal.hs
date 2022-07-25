@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Tomcab.Cabal (
@@ -28,7 +29,9 @@ module Tomcab.Cabal (
   CabalValue (..),
 
   -- * Re-exports
-  module X,
+  ModulePattern (..),
+  Module,
+  pattern Module,
 ) where
 
 import Control.Applicative ((<|>))
@@ -50,7 +53,7 @@ import TOML (
   runDecoder,
  )
 
-import Tomcab.Cabal.Module as X
+import Tomcab.Cabal.Module
 
 -- invariant: after resolveDefaults, packageCabalVersion is Just
 -- invariant: after resolveDefaults, packageBuildType is Just
