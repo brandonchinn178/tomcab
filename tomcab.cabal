@@ -35,6 +35,8 @@ executable tomcab
   main-is: Main.hs
 
 executable stack-tomcab
+  other-modules:
+      Wrapper
   hs-source-dirs:
       exe
   build-depends:
@@ -45,14 +47,14 @@ executable stack-tomcab
   ghc-options:
       -Wall
   main-is: Stack.hs
-  other-modules:
-      Wrapper
 
   if !os(windows)
     build-depends:
         unix < 3
 
 executable cabal-tomcab
+  other-modules:
+      Wrapper
   hs-source-dirs:
       exe
   build-depends:
@@ -63,8 +65,6 @@ executable cabal-tomcab
   ghc-options:
       -Wall
   main-is: Cabal.hs
-  other-modules:
-      Wrapper
 
   if !os(windows)
     build-depends:

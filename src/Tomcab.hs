@@ -1,9 +1,12 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -13,20 +16,22 @@ module Tomcab (
 ) where
 
 import Control.Applicative ((<|>))
-import Control.Monad (when, (>=>))
+import Control.Monad (forM_, when, (>=>))
 import Data.Bifunctor (first)
 import Data.Functor.Identity (runIdentity)
-import Data.List (intersperse)
+import Data.List (find, intersperse, isPrefixOf, sort, sortOn)
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust, mapMaybe)
+import Data.Ord (Down (..))
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import System.Directory (doesDirectoryExist, getCurrentDirectory, listDirectory)
 import System.Exit (exitFailure)
-import System.FilePath (takeDirectory, takeFileName, (</>))
+import System.FilePath (makeRelative, splitExtensions, takeDirectory, takeFileName, (</>))
 import TOML (
   Decoder,
   DecodeTOML (..),
@@ -71,13 +76,21 @@ findCabalFiles = do
 {----- FilePath helpers -----}
 
 listDirectoryRecursive :: FilePath -> IO [FilePath]
-listDirectoryRecursive fp = fmap concat . mapM (go . (fp </>)) =<< listDirectory fp
+listDirectoryRecursive dir = fmap concat . mapM (go . (dir </>)) =<< listDirectory dir
   where
     go child = do
       isDir <- doesDirectoryExist child
       if isDir
         then listDirectoryRecursive child
         else pure [child]
+
+listModules :: FilePath -> IO [Module]
+listModules dir = mapMaybe toModule <$> listDirectoryRecursive dir
+  where
+    toModule fp =
+      case splitExtensions $ makeRelative dir fp of
+        (file, ".hs") -> Just $ Module $ Text.splitOn "/" $ Text.pack file
+        _ -> Nothing
 
 {----- TODO: move to another module -----}
 
@@ -89,6 +102,7 @@ loadPackage fp = do
 
 data TomcabError
   = ParseError TOMLError
+  | InvalidPattern ModulePattern
   | MissingPackageName
   | UnknownCommonStanza Text
   deriving (Show)
@@ -96,9 +110,14 @@ data TomcabError
 instance Exception TomcabError where
   displayException = \case
     ParseError e -> Text.unpack $ renderTOMLError e
+    InvalidPattern pat -> "Invalid pattern: " ++ Text.unpack (renderPattern pat)
     MissingPackageName -> "Package name is not specified"
     UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
 
+-- invariant: after resolveDefaults, packageCabalVersion is Just
+-- invariant: after resolveDefaults, packageBuildType is Just
+-- invariant: after resolveAutoImports, packageAutoImport is empty
+-- invariant: after resolveImports, packageCommonStanzas is empty
 data Package = Package
   { packageName :: Maybe Text
   , packageVersion :: Maybe Text
@@ -158,9 +177,11 @@ data CabalValue
 instance DecodeTOML CabalValue where
   tomlDecoder = (CabalValue <$> tomlDecoder) <|> (CabalListValue <$> tomlDecoder)
 
+-- invariant: after resolveImports, packageImport is empty
 data PackageBuildInfo a = PackageBuildInfo
   { packageImport :: [Text]
   , packageBuildDepends :: [Text]
+  , packageOtherModules :: [ModulePattern]
   , packageHsSourceDirs :: [Text]
   , packageInfoIfs :: [Conditional a]
   , packageInfoFields :: CabalFields
@@ -169,11 +190,12 @@ data PackageBuildInfo a = PackageBuildInfo
 
 instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
   tomlDecoder = do
-    remainingFields <- getAllExcept ["import", "build-depends", "hs-source-dirs", "if"]
+    remainingFields <- getAllExcept ["import", "build-depends", "other-modules", "hs-source-dirs", "if"]
     info <-
       PackageBuildInfo
         <$> getFieldOr "import" []
         <*> (either buildDependsFromTable id . fromMaybe (Right []) <$> getFieldOpt "build-depends")
+        <*> getFieldOr "other-modules" []
         <*> getFieldOr "hs-source-dirs" []
         <*> getFieldOr "if" []
         <*> pure Map.empty
@@ -185,6 +207,8 @@ instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
       buildDependsFromTable = map (\(k, v) -> k <> " " <> v) . Map.toList
 
 class HasPackageBuildInfo a where
+  getBuildInfo :: a -> PackageBuildInfo a
+
   modifyBuildInfo :: (PackageBuildInfo a -> PackageBuildInfo a) -> (a -> a)
   modifyBuildInfo f = runIdentity . modifyBuildInfoM (pure . f)
 
@@ -202,6 +226,7 @@ mergeCommonStanza (CommonStanza commonInfo) info =
   PackageBuildInfo
     { packageImport = packageImport commonInfo <> packageImport info
     , packageBuildDepends = packageBuildDepends commonInfo <> packageBuildDepends info
+    , packageOtherModules = packageOtherModules commonInfo <> packageOtherModules info
     , packageHsSourceDirs = packageHsSourceDirs commonInfo <> packageHsSourceDirs info
     , packageInfoIfs = map upcastConditional (packageInfoIfs commonInfo) <> packageInfoIfs info
     , -- union is left-biased; info fields should override commonInfo fields
@@ -216,7 +241,7 @@ mergeCommonStanza (CommonStanza commonInfo) info =
         }
 
 emptyPackageBuildInfo :: PackageBuildInfo a
-emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty mempty
+emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty mempty mempty
 
 decodePackageBuildInfo :: DecodeTOML a => Map Text Value -> Decoder (PackageBuildInfo a)
 decodePackageBuildInfo = applyDecoder tomlDecoder . Table
@@ -235,7 +260,7 @@ instance DecodeTOML CommonStanza where
 
 data PackageLibrary = PackageLibrary
   { packageLibraryName :: Maybe Text
-  , packageExposedModules :: [Pattern]
+  , packageExposedModules :: [ModulePattern]
   , packageLibraryInfo :: PackageBuildInfo PackageLibrary
   }
   deriving (Show)
@@ -254,6 +279,7 @@ instance DecodeTOML PackageLibrary where
     pure library{packageLibraryInfo = info}
 
 instance HasPackageBuildInfo PackageLibrary where
+  getBuildInfo = packageLibraryInfo
   modifyBuildInfoM f lib = do
     info <- f (packageLibraryInfo lib)
     pure lib{packageLibraryInfo = info}
@@ -284,6 +310,7 @@ instance DecodeTOML PackageExecutable where
     pure exe{packageExeInfo = info}
 
 instance HasPackageBuildInfo PackageExecutable where
+  getBuildInfo = packageExeInfo
   modifyBuildInfoM f exe = do
     info <- f (packageExeInfo exe)
     pure exe{packageExeInfo = info}
@@ -341,12 +368,10 @@ applyDecoder d v = makeDecoder $ \_ -> runDecoder d v
 getFieldOr :: DecodeTOML a => Text -> a -> Decoder a
 getFieldOr key def = fromMaybe def <$> getFieldOpt key
 
--- TODO: support globs
-type Pattern = Text
-
 parsePackage :: Text -> Either TomcabError Package
 parsePackage = first ParseError . decode
 
+-- TODO: add "phase" of resolution in phantom type? a la Trees That Grow
 resolvePackage :: Package -> IO Package
 resolvePackage =
   (foldr (>=>) pure)
@@ -385,9 +410,16 @@ resolvePackage =
           }
 
     resolveModules pkg = do
-      -- TODO: load all files in hs-source-dirs + resolve exposed-modules/other-modules
-      packageLibraries' <- mapM pure (packageLibraries pkg)
-      packageExecutables' <- mapM pure (packageExecutables pkg)
+      let setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
+          resolveLibraryModules lib = do
+            (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
+            pure $ setOtherModules other lib{packageExposedModules = exposed}
+          resolveComponentModules parent = do
+            (_, other) <- resolveModulePatterns [] parent
+            pure $ setOtherModules other parent
+
+      packageLibraries' <- mapM resolveLibraryModules (packageLibraries pkg)
+      packageExecutables' <- mapM resolveComponentModules (packageExecutables pkg)
       pure
         pkg
           { packageLibraries = packageLibraries'
@@ -409,6 +441,86 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
           go
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
             (mergeCommonStanza commonStanza info)
+
+data ModuleVisibility = Exposed | Other
+  deriving (Eq)
+
+resolveModulePatterns :: HasPackageBuildInfo a => [ModulePattern] -> a -> IO ([Module], [Module])
+resolveModulePatterns exposedModules parent = do
+  modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
+
+  let parseAndTagPattern tag pat = (, tag) <$> fromEither (parsePattern pat)
+  patterns <-
+    fmap concat . sequence $
+      [ mapM (parseAndTagPattern Exposed) exposedModules
+      , mapM (parseAndTagPattern Other) packageOtherModules
+      ]
+
+  let matchedModules = zipMapMaybe (categorize patterns) modules
+      extract x = map fst . filter ((== x) . snd)
+  pure (extract Exposed matchedModules, extract Other matchedModules)
+  where
+    PackageBuildInfo{packageHsSourceDirs, packageOtherModules} = getBuildInfo parent
+
+    concatMapM f = fmap concat . mapM f
+    zipMapMaybe f = mapMaybe (\x -> (x,) <$> f x)
+
+{----- Patterns -----}
+
+data ParsedModulePattern = ParsedModulePattern
+  { patternPath :: [Text]
+  , patternHasWildcard :: Bool
+  -- ^ Does the pattern end with a wildcard?
+  }
+  deriving (Show, Eq, Ord)
+
+-- TODO: make a separate type
+type ModulePattern = ParsedModulePattern
+pattern ModulePattern :: Text -> ParsedModulePattern
+pattern ModulePattern path = ParsedModulePattern [path] False
+{-# COMPLETE ModulePattern #-}
+
+instance DecodeTOML ModulePattern where
+  tomlDecoder = ModulePattern <$> tomlDecoder
+
+-- TODO: make a separate type
+-- invariant: patternHasWildcard is False
+type Module = ModulePattern
+pattern Module :: [Text] -> ParsedModulePattern
+pattern Module path = ParsedModulePattern path False
+{-# COMPLETE Module #-}
+
+parsePattern :: ModulePattern -> Either TomcabError ParsedModulePattern
+parsePattern pat@(ModulePattern path) =
+  case NonEmpty.nonEmpty $ Text.splitOn "." path of
+    Nothing -> Left $ InvalidPattern pat
+    Just path' -> do
+      let (patternPath, patternHasWildcard) =
+            case unsnoc path' of
+              (prefix, "*") -> (prefix, True)
+              _ -> (NonEmpty.toList path', False)
+      forM_ patternPath $ \case
+        "*" -> Left $ InvalidPattern pat
+        _ -> pure ()
+      pure ParsedModulePattern{..}
+  where
+    unsnoc xs = (NonEmpty.init xs, NonEmpty.last xs)
+
+renderPattern :: ParsedModulePattern -> Text
+renderPattern ParsedModulePattern{..} =
+  Text.concat
+    [ Text.intercalate "." patternPath
+    , if patternHasWildcard then ".*" else ""
+    ]
+
+-- | Return the annotation of the closest matching pattern for the given module.
+categorize :: [(ParsedModulePattern, a)] -> Module -> Maybe a
+categorize patterns (Module modl) =
+  fmap snd . find isMatch . sortByPathDesc . filter isPossibleMatch $ patterns
+  where
+    sortByPathDesc = sortOn (Down . length . patternPath . fst)
+    isPossibleMatch = (`isPrefixOf` modl) . patternPath . fst
+    isMatch (ParsedModulePattern{..}, _) = patternHasWildcard || patternPath == modl
 
 {----- Render -----}
 
@@ -438,7 +550,7 @@ renderLibrary lib =
   where
     renderLibraryBody PackageLibrary{..} =
       joinLines
-        [ renderField "exposed-modules" (CabalListValue packageExposedModules)
+        [ renderField "exposed-modules" (CabalListValue $ map renderPattern packageExposedModules)
         , renderBuildInfo renderLibraryBody packageLibraryInfo
         ]
 
@@ -457,7 +569,8 @@ renderExecutable exe =
 renderBuildInfo :: (a -> Text) -> PackageBuildInfo a -> Text
 renderBuildInfo renderParent PackageBuildInfo{..} =
   joinLines
-    [ renderField "hs-source-dirs" (CabalListValue packageHsSourceDirs)
+    [ renderField "other-modules" (CabalListValue $ map renderPattern packageOtherModules)
+    , renderField "hs-source-dirs" (CabalListValue packageHsSourceDirs)
     , renderField "build-depends" (CabalListValue packageBuildDepends)
     , renderFields packageInfoFields
     , joinLines $

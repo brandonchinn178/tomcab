@@ -24,7 +24,7 @@ auto-import = ["defaults"]
 
 [[library]]
     hs-source-dirs = ["src"]
-    exposed-modules = ["Tomcab"]
+    exposed-modules = ["*"]
 
     [library.build-depends]
     base = ">= 4.14 && < 5"
