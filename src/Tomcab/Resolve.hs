@@ -40,57 +40,59 @@ import Tomcab.Utils.FilePath (listDirectoryRecursive)
 -- TODO: add "phase" of resolution in phantom type? a la Trees That Grow
 resolvePackage :: Package -> IO Package
 resolvePackage =
-  foldr (>=>) pure $
-    [ resolveDefaults
-    , resolveAutoImports
-    , resolveImports
-    , resolveModules
-    ]
-  where
-    resolveDefaults pkg = do
-      let defaultTo f x = Just $ fromMaybe x (f pkg)
-      pure
-        pkg
-          { packageCabalVersion = packageCabalVersion `defaultTo` "1.12"
-          , packageBuildType = packageBuildType `defaultTo` "Simple"
-          }
+  resolveDefaults
+    >=> resolveAutoImports
+    >=> resolveImports
+    >=> resolveModules
 
-    resolveAutoImports pkg = do
-      let addAutoImports info = info{packageImport = packageAutoImport pkg ++ packageImport info}
-      pure
-        pkg
-          { packageAutoImport = []
-          , packageLibraries = map (modifyBuildInfo addAutoImports) (packageLibraries pkg)
-          , packageExecutables = map (modifyBuildInfo addAutoImports) (packageExecutables pkg)
-          }
+resolveDefaults :: Package -> IO Package
+resolveDefaults pkg = do
+  let defaultTo f x = Just $ fromMaybe x (f pkg)
+  pure
+    pkg
+      { packageCabalVersion = packageCabalVersion `defaultTo` "1.12"
+      , packageBuildType = packageBuildType `defaultTo` "Simple"
+      }
 
-    resolveImports pkg = do
-      let commonStanzas = packageCommonStanzas pkg
-      packageLibraries' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageLibraries pkg)
-      packageExecutables' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageExecutables pkg)
-      pure
-        pkg
-          { packageCommonStanzas = Map.empty
-          , packageLibraries = packageLibraries'
-          , packageExecutables = packageExecutables'
-          }
+resolveAutoImports :: Package -> IO Package
+resolveAutoImports pkg = do
+  let addAutoImports info = info{packageImport = packageAutoImport pkg ++ packageImport info}
+  pure
+    pkg
+      { packageAutoImport = []
+      , packageLibraries = map (modifyBuildInfo addAutoImports) (packageLibraries pkg)
+      , packageExecutables = map (modifyBuildInfo addAutoImports) (packageExecutables pkg)
+      }
 
-    resolveModules pkg = do
-      let setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
-          resolveLibraryModules lib = do
-            (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
-            pure $ setOtherModules other lib{packageExposedModules = exposed}
-          resolveComponentModules parent = do
-            (_, other) <- resolveModulePatterns [] parent
-            pure $ setOtherModules other parent
+resolveImports :: Package -> IO Package
+resolveImports pkg = do
+  let commonStanzas = packageCommonStanzas pkg
+  packageLibraries' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageLibraries pkg)
+  packageExecutables' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageExecutables pkg)
+  pure
+    pkg
+      { packageCommonStanzas = Map.empty
+      , packageLibraries = packageLibraries'
+      , packageExecutables = packageExecutables'
+      }
 
-      packageLibraries' <- mapM resolveLibraryModules (packageLibraries pkg)
-      packageExecutables' <- mapM resolveComponentModules (packageExecutables pkg)
-      pure
-        pkg
-          { packageLibraries = packageLibraries'
-          , packageExecutables = packageExecutables'
-          }
+resolveModules :: Package -> IO Package
+resolveModules pkg = do
+  let setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
+      resolveLibraryModules lib = do
+        (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
+        pure $ setOtherModules other lib{packageExposedModules = exposed}
+      resolveComponentModules parent = do
+        (_, other) <- resolveModulePatterns [] parent
+        pure $ setOtherModules other parent
+
+  packageLibraries' <- mapM resolveLibraryModules (packageLibraries pkg)
+  packageExecutables' <- mapM resolveComponentModules (packageExecutables pkg)
+  pure
+    pkg
+      { packageLibraries = packageLibraries'
+      , packageExecutables = packageExecutables'
+      }
 
 mergeImports ::
   (HasPackageBuildInfo a, FromCommonStanza a) =>
