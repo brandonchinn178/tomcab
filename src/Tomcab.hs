@@ -12,6 +12,7 @@ module Tomcab (
 
 import Control.Monad (when, (>=>))
 import Data.Bifunctor (first)
+import Data.Foldable (asum)
 import Data.List (sort)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe, isJust, mapMaybe)
@@ -55,12 +56,13 @@ findCabalFiles = do
 
 loadPackage :: FilePath -> IO Package
 loadPackage fp = do
-  pkg <- fromEither . parsePackage =<< Text.readFile fp
+  pkg <- parsePackage =<< Text.readFile fp
   -- TODO: loadPackage all files mentioned in `extends`
   resolvePackage pkg
 
-parsePackage :: Text -> Either TomcabError Package
-parsePackage = first ParseError . decode
+-- TODO: Remove ParseError: https://github.com/brandonchinn178/toml-reader/issues/13
+parsePackage :: Text -> IO Package
+parsePackage = fromEither . first ParseError . decode
 
 {----- Package configuration resolution -----}
 
@@ -152,19 +154,32 @@ resolveModulePatterns exposedModules parent = do
     concatMapM f = fmap concat . mapM f
     zipMapMaybe f = mapMaybe (\x -> (x,) <$> f x)
 
+data ResolutionError
+  = MissingPackageName
+  | UnknownCommonStanza Text
+  deriving (Show)
+
+instance Exception ResolutionError where
+  displayException = \case
+    MissingPackageName -> "Package name is not specified"
+    UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
+
 {----- Errors -----}
 
 data TomcabError
   = ParseError TOMLError
-  | MissingPackageName
-  | UnknownCommonStanza Text
+  | ResolutionError ResolutionError
   deriving (Show)
 
 instance Exception TomcabError where
+  fromException e =
+    asum
+      [ fromException e -- https://github.com/brandonchinn178/toml-reader/issues/13
+      , ResolutionError <$> fromException e
+      ]
   displayException = \case
     ParseError e -> Text.unpack $ renderTOMLError e
-    MissingPackageName -> "Package name is not specified"
-    UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
+    ResolutionError e -> displayException e
 
 {----- FilePath helpers -----}
 
