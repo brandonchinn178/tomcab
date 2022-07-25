@@ -34,7 +34,7 @@ import Tomcab.Cabal (
   modifyBuildInfoM,
   pattern Module,
  )
-import Tomcab.Cabal.Module (categorize)
+import Tomcab.Cabal.Module (lookupPatternMatch)
 import Tomcab.Utils.FilePath (listDirectoryRecursive)
 
 -- TODO: add "phase" of resolution in phantom type? a la Trees That Grow
@@ -116,7 +116,7 @@ resolveModulePatterns exposedModules parent = do
   modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
 
   let patterns = map (,Exposed) exposedModules ++ map (,Other) packageOtherModules
-  let matchedModules = zipMapMaybe (categorize patterns) modules
+  let matchedModules = zipMapMaybe (`lookupPatternMatch` patterns) modules
       extract x = map fst . filter ((== x) . snd)
   pure (extract Exposed matchedModules, extract Other matchedModules)
   where

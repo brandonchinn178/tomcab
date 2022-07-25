@@ -7,7 +7,7 @@
 module Tomcab.Cabal.Module (
   -- * Module pattern
   ModulePattern (..),
-  categorize,
+  lookupPatternMatch,
 
   -- * Resolved module
   Module,
@@ -57,9 +57,8 @@ pattern Module path = ModulePattern path False
 {-# COMPLETE Module #-}
 
 -- | Return the annotation of the closest matching pattern for the given module.
-categorize :: [(ModulePattern, a)] -> Module -> Maybe a
-categorize patterns (Module modl) =
-  fmap snd . find isMatch . sortByPathDesc . filter isPossibleMatch $ patterns
+lookupPatternMatch :: Module -> [(ModulePattern, a)] -> Maybe a
+lookupPatternMatch (Module modl) = fmap snd . find isMatch . sortByPathDesc . filter isPossibleMatch
   where
     sortByPathDesc = sortOn (Down . length . patternPath . fst)
     isPossibleMatch = (`isPrefixOf` modl) . patternPath . fst
