@@ -40,19 +40,23 @@ import Tomcab.Utils.FilePath (listDirectoryRecursive)
 -- TODO: add "phase" of resolution in phantom type? a la Trees That Grow
 resolvePackage :: Package -> IO Package
 resolvePackage =
-  resolveDefaults
+  resolveOptionals
     >=> resolveAutoImports
     >=> resolveImports
     >=> resolveModules
 
-resolveDefaults :: Package -> IO Package
-resolveDefaults pkg = do
+{----- Parsed => ResolvedOptionals -----}
+
+resolveOptionals :: Package -> IO Package
+resolveOptionals pkg = do
   let defaultTo f x = Just $ fromMaybe x (f pkg)
   pure
     pkg
       { packageCabalVersion = packageCabalVersion `defaultTo` "1.12"
       , packageBuildType = packageBuildType `defaultTo` "Simple"
       }
+
+{----- ResolvedOptionals => NoAutoImports -----}
 
 resolveAutoImports :: Package -> IO Package
 resolveAutoImports pkg = do
@@ -64,6 +68,8 @@ resolveAutoImports pkg = do
       , packageExecutables = map (modifyBuildInfo addAutoImports) (packageExecutables pkg)
       }
 
+{----- NoAutoImports => NoImports -----}
+
 resolveImports :: Package -> IO Package
 resolveImports pkg = do
   let commonStanzas = packageCommonStanzas pkg
@@ -73,24 +79,6 @@ resolveImports pkg = do
     pkg
       { packageCommonStanzas = Map.empty
       , packageLibraries = packageLibraries'
-      , packageExecutables = packageExecutables'
-      }
-
-resolveModules :: Package -> IO Package
-resolveModules pkg = do
-  let setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
-      resolveLibraryModules lib = do
-        (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
-        pure $ setOtherModules other lib{packageExposedModules = exposed}
-      resolveComponentModules parent = do
-        (_, other) <- resolveModulePatterns [] parent
-        pure $ setOtherModules other parent
-
-  packageLibraries' <- mapM resolveLibraryModules (packageLibraries pkg)
-  packageExecutables' <- mapM resolveComponentModules (packageExecutables pkg)
-  pure
-    pkg
-      { packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
       }
 
@@ -109,6 +97,26 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
           go
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
             (mergeCommonStanza commonStanza info)
+
+{----- NoImports => NoModulePatterns -----}
+
+resolveModules :: Package -> IO Package
+resolveModules pkg = do
+  let setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
+      resolveLibraryModules lib = do
+        (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
+        pure $ setOtherModules other lib{packageExposedModules = exposed}
+      resolveComponentModules parent = do
+        (_, other) <- resolveModulePatterns [] parent
+        pure $ setOtherModules other parent
+
+  packageLibraries' <- mapM resolveLibraryModules (packageLibraries pkg)
+  packageExecutables' <- mapM resolveComponentModules (packageExecutables pkg)
+  pure
+    pkg
+      { packageLibraries = packageLibraries'
+      , packageExecutables = packageExecutables'
+      }
 
 data ModuleVisibility = Exposed | Other
   deriving (Eq)
