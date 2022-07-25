@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Tomcab.Render (renderPackage) where
@@ -14,11 +15,12 @@ import Tomcab.Cabal (
   CabalFields,
   CabalValue (..),
   Conditional (..),
+  Module,
   Package (..),
   PackageBuildInfo (..),
   PackageExecutable (..),
   PackageLibrary (..),
-  renderPattern,
+  pattern Module,
  )
 
 renderPackage :: Package -> Text
@@ -47,7 +49,7 @@ renderLibrary lib =
   where
     renderLibraryBody PackageLibrary{..} =
       joinLines
-        [ renderField "exposed-modules" (CabalListValue $ map renderPattern packageExposedModules)
+        [ renderField "exposed-modules" (CabalListValue $ map renderModule packageExposedModules)
         , renderBuildInfo renderLibraryBody packageLibraryInfo
         ]
 
@@ -66,7 +68,7 @@ renderExecutable exe =
 renderBuildInfo :: (a -> Text) -> PackageBuildInfo a -> Text
 renderBuildInfo renderParent PackageBuildInfo{..} =
   joinLines
-    [ renderField "other-modules" (CabalListValue $ map renderPattern packageOtherModules)
+    [ renderField "other-modules" (CabalListValue $ map renderModule packageOtherModules)
     , renderField "hs-source-dirs" (CabalListValue packageHsSourceDirs)
     , renderField "build-depends" (CabalListValue packageBuildDepends)
     , renderFields packageInfoFields
@@ -97,6 +99,9 @@ renderConditional renderParent Conditional{..} =
             , indent $ renderParent body
             ]
     ]
+
+renderModule :: Module -> Text
+renderModule (Module path) = Text.intercalate "." path
 
 -- ["a", "b", "", "c", "\n", "d"] => "a\nb\nc\n\nd"
 joinLines :: [Text] -> Text

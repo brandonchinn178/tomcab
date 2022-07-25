@@ -142,13 +142,7 @@ resolveModulePatterns :: HasPackageBuildInfo a => [ModulePattern] -> a -> IO ([M
 resolveModulePatterns exposedModules parent = do
   modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
 
-  let parseAndTagPattern tag pat = (,tag) <$> maybe (throwIO $ InvalidPattern pat) pure (parsePattern pat)
-  patterns <-
-    fmap concat . sequence $
-      [ mapM (parseAndTagPattern Exposed) exposedModules
-      , mapM (parseAndTagPattern Other) packageOtherModules
-      ]
-
+  let patterns = map (,Exposed) exposedModules ++ map (,Other) packageOtherModules
   let matchedModules = zipMapMaybe (categorize patterns) modules
       extract x = map fst . filter ((== x) . snd)
   pure (extract Exposed matchedModules, extract Other matchedModules)
@@ -162,7 +156,6 @@ resolveModulePatterns exposedModules parent = do
 
 data TomcabError
   = ParseError TOMLError
-  | InvalidPattern ModulePattern
   | MissingPackageName
   | UnknownCommonStanza Text
   deriving (Show)
@@ -170,7 +163,6 @@ data TomcabError
 instance Exception TomcabError where
   displayException = \case
     ParseError e -> Text.unpack $ renderTOMLError e
-    InvalidPattern pat -> "Invalid pattern: " ++ Text.unpack (renderPattern pat)
     MissingPackageName -> "Package name is not specified"
     UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
 
