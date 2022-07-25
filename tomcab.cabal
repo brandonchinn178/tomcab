@@ -9,6 +9,9 @@ synopsis: Generate Cabal files from TOML files
 library
   exposed-modules:
       Tomcab
+    , Tomcab.Cabal
+    , Tomcab.Cabal.Module
+    , Tomcab.Render
   hs-source-dirs:
       src
   build-depends:
