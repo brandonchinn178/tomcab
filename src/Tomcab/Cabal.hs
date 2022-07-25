@@ -37,9 +37,9 @@ module Tomcab.Cabal (
 import Control.Applicative ((<|>))
 import Data.Functor.Identity (runIdentity)
 import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 import Data.Text (Text)
 import TOML (
   DecodeTOML (..),

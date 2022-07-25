@@ -16,10 +16,10 @@ module Tomcab.Cabal.Module (
 
 import Control.Monad (forM_)
 import Data.List (find, isPrefixOf, sortOn)
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Ord (Down (..))
 import Data.Text (Text)
-import qualified Data.Text as Text
+import Data.Text qualified as Text
 import TOML (DecodeTOML (..), invalidValue, makeDecoder)
 
 data ModulePattern = ModulePattern

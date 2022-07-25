@@ -13,8 +13,8 @@ import Data.Bifunctor (first)
 import Data.Foldable (asum)
 import Data.Maybe (isJust)
 import Data.Text (Text)
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
 import System.Directory (getCurrentDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeDirectory, takeFileName, (</>))

@@ -8,6 +8,7 @@ auto-import = ["defaults"]
 [common.defaults]
     ghc-options = ["-Wall"]
     default-language = "Haskell2010"
+    default-extensions = ["ImportQualifiedPost"]
 
 [common.wrapper-exe]
     hs-source-dirs = ["exe"]

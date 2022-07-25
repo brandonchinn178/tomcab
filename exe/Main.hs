@@ -1,4 +1,4 @@
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty qualified as NonEmpty
 import System.Environment (getArgs)
 import Tomcab (runTomcab)
 
