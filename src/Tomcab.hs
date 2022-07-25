@@ -1,14 +1,13 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Tomcab (
@@ -248,13 +247,10 @@ decodePackageBuildInfo = applyDecoder tomlDecoder . Table
 
 type CommonStanzas = Map Text CommonStanza
 
-data CommonStanza = CommonStanza
+newtype CommonStanza = CommonStanza
   { commonStanzaInfo :: PackageBuildInfo CommonStanza
   }
-  deriving (Show)
-
-instance DecodeTOML CommonStanza where
-  tomlDecoder = CommonStanza <$> tomlDecoder
+  deriving (Show, DecodeTOML)
 
 {----- Components -----}
 
@@ -374,7 +370,7 @@ parsePackage = first ParseError . decode
 -- TODO: add "phase" of resolution in phantom type? a la Trees That Grow
 resolvePackage :: Package -> IO Package
 resolvePackage =
-  (foldr (>=>) pure)
+  foldr (>=>) pure $
     [ resolveDefaults
     , resolveAutoImports
     , resolveImports
@@ -585,7 +581,7 @@ renderBuildInfo renderParent PackageBuildInfo{..} =
 
 renderConditional :: (a -> Text) -> Conditional a -> Text
 renderConditional renderParent Conditional{..} =
-  joinLines $
+  joinLines
     [ "if " <> condition
     , indent $ renderParent conditionThen
     , joinLines $
