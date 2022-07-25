@@ -449,7 +449,7 @@ resolveModulePatterns :: HasPackageBuildInfo a => [ModulePattern] -> a -> IO ([M
 resolveModulePatterns exposedModules parent = do
   modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
 
-  let parseAndTagPattern tag pat = (, tag) <$> fromEither (parsePattern pat)
+  let parseAndTagPattern tag pat = (, tag) <$> maybe (throwIO $ InvalidPattern pat) pure (parsePattern pat)
   patterns <-
     fmap concat . sequence $
       [ mapM (parseAndTagPattern Exposed) exposedModules
@@ -490,19 +490,20 @@ pattern Module :: [Text] -> ParsedModulePattern
 pattern Module path = ParsedModulePattern path False
 {-# COMPLETE Module #-}
 
-parsePattern :: ModulePattern -> Either TomcabError ParsedModulePattern
-parsePattern pat@(ModulePattern path) =
-  case NonEmpty.nonEmpty $ Text.splitOn "." path of
-    Nothing -> Left $ InvalidPattern pat
-    Just path' -> do
-      let (patternPath, patternHasWildcard) =
-            case unsnoc path' of
-              (prefix, "*") -> (prefix, True)
-              _ -> (NonEmpty.toList path', False)
-      forM_ patternPath $ \case
-        "*" -> Left $ InvalidPattern pat
-        _ -> pure ()
-      pure ParsedModulePattern{..}
+parsePattern :: ModulePattern -> Maybe ParsedModulePattern
+parsePattern (ModulePattern path) = do
+  pathParts <- NonEmpty.nonEmpty $ Text.splitOn "." path
+
+  let (patternPath, patternHasWildcard) =
+        case unsnoc pathParts of
+          (pathParts', "*") -> (pathParts', True)
+          _ -> (NonEmpty.toList pathParts, False)
+
+  forM_ patternPath $ \case
+    "*" -> Nothing
+    _ -> pure ()
+
+  pure ParsedModulePattern{..}
   where
     unsnoc xs = (NonEmpty.init xs, NonEmpty.last xs)
 
