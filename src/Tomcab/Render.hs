@@ -5,10 +5,10 @@
 module Tomcab.Render (renderPackage) where
 
 import Data.List (intersperse)
+import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import qualified Data.Text as Text
-import qualified Data.Map as Map
 
 import Tomcab.Cabal (
   CabalFields,

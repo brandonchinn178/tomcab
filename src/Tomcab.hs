@@ -53,49 +53,16 @@ findCabalFiles = do
   cwd <- getCurrentDirectory
   filter ((== "package.toml") . takeFileName) <$> listDirectoryRecursive cwd
 
-{----- FilePath helpers -----}
-
-listDirectoryRecursive :: FilePath -> IO [FilePath]
-listDirectoryRecursive dir = fmap concat . mapM (go . (dir </>)) =<< listDirectory dir
-  where
-    go child = do
-      isDir <- doesDirectoryExist child
-      if isDir
-        then listDirectoryRecursive child
-        else pure [child]
-
-listModules :: FilePath -> IO [Module]
-listModules dir = mapMaybe toModule <$> listDirectoryRecursive dir
-  where
-    toModule fp =
-      case splitExtensions $ makeRelative dir fp of
-        (file, ".hs") -> Just $ Module $ Text.splitOn "/" $ Text.pack file
-        _ -> Nothing
-
-{----- TODO: move to another module -----}
-
 loadPackage :: FilePath -> IO Package
 loadPackage fp = do
   pkg <- fromEither . parsePackage =<< Text.readFile fp
   -- TODO: loadPackage all files mentioned in `extends`
   resolvePackage pkg
 
-data TomcabError
-  = ParseError TOMLError
-  | InvalidPattern ModulePattern
-  | MissingPackageName
-  | UnknownCommonStanza Text
-  deriving (Show)
-
-instance Exception TomcabError where
-  displayException = \case
-    ParseError e -> Text.unpack $ renderTOMLError e
-    InvalidPattern pat -> "Invalid pattern: " ++ Text.unpack (renderPattern pat)
-    MissingPackageName -> "Package name is not specified"
-    UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
-
 parsePackage :: Text -> Either TomcabError Package
 parsePackage = first ParseError . decode
+
+{----- Package configuration resolution -----}
 
 -- TODO: add "phase" of resolution in phantom type? a la Trees That Grow
 resolvePackage :: Package -> IO Package
@@ -190,3 +157,38 @@ resolveModulePatterns exposedModules parent = do
 
     concatMapM f = fmap concat . mapM f
     zipMapMaybe f = mapMaybe (\x -> (x,) <$> f x)
+
+{----- Errors -----}
+
+data TomcabError
+  = ParseError TOMLError
+  | InvalidPattern ModulePattern
+  | MissingPackageName
+  | UnknownCommonStanza Text
+  deriving (Show)
+
+instance Exception TomcabError where
+  displayException = \case
+    ParseError e -> Text.unpack $ renderTOMLError e
+    InvalidPattern pat -> "Invalid pattern: " ++ Text.unpack (renderPattern pat)
+    MissingPackageName -> "Package name is not specified"
+    UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
+
+{----- FilePath helpers -----}
+
+listDirectoryRecursive :: FilePath -> IO [FilePath]
+listDirectoryRecursive dir = fmap concat . mapM (go . (dir </>)) =<< listDirectory dir
+  where
+    go child = do
+      isDir <- doesDirectoryExist child
+      if isDir
+        then listDirectoryRecursive child
+        else pure [child]
+
+listModules :: FilePath -> IO [Module]
+listModules dir = mapMaybe toModule <$> listDirectoryRecursive dir
+  where
+    toModule fp =
+      case splitExtensions $ makeRelative dir fp of
+        (file, ".hs") -> Just $ Module $ Text.splitOn "/" $ Text.pack file
+        _ -> Nothing
