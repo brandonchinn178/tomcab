@@ -69,7 +69,12 @@ auto-import = ["defaults"]
 
     build-depends = [
         "base",
+        "containers",
         "tasty",
         "tasty-autocollect",
+        "tasty-hunit",
+        "text",
         "tomcab",
+        "toml-reader",
+        "unliftio",
     ]

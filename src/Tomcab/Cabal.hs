@@ -35,7 +35,6 @@ import Control.Applicative ((<|>))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.Set qualified as Set
 import Data.Text (Text)
 import TOML (
   DecodeTOML (..),
@@ -45,8 +44,6 @@ import TOML (
   getField,
   getFieldOpt,
   getFieldWith,
-  makeDecoder,
-  runDecoder,
  )
 
 import Tomcab.Cabal.Module
@@ -56,6 +53,7 @@ import Tomcab.Resolve.Phases (
   Unresolved,
   UnsetFrom,
  )
+import Tomcab.Utils.TOML
 
 data Package (phase :: ResolutionPhase) = Package
   { packageName :: NonNullAfterParsed phase Text
@@ -166,7 +164,7 @@ data Conditional a = Conditional
   , conditionElif :: [(Text, a)]
   , conditionElse :: Maybe a
   }
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor, Foldable, Traversable)
 
 instance DecodeTOML a => DecodeTOML (Conditional a) where
   tomlDecoder = do
@@ -244,17 +242,3 @@ data CabalValue
 
 instance DecodeTOML CabalValue where
   tomlDecoder = (CabalValue <$> tomlDecoder) <|> (CabalListValue <$> tomlDecoder)
-
-{----- Decoder utilities -----}
-
--- https://github.com/brandonchinn178/toml-reader/issues/10
-getFieldOr :: DecodeTOML a => Text -> a -> Decoder a
-getFieldOr key def = fromMaybe def <$> getFieldOpt key
-
--- https://github.com/brandonchinn178/toml-reader/issues/11
-applyDecoder :: Decoder a -> Value -> Decoder a
-applyDecoder d v = makeDecoder $ \_ -> runDecoder d v
-
--- https://github.com/brandonchinn178/toml-reader/issues/12
-getAllExcept :: [Text] -> Decoder (Map Text Value)
-getAllExcept keys = (`Map.withoutKeys` Set.fromList keys) <$> tomlDecoder

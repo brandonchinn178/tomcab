@@ -15,6 +15,7 @@ library
     , Tomcab.Resolve
     , Tomcab.Resolve.Phases
     , Tomcab.Utils.FilePath
+    , Tomcab.Utils.TOML
   hs-source-dirs:
       src
   build-depends:
@@ -87,13 +88,20 @@ executable cabal-tomcab
 test-suite tomcab-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
+  other-modules:
+      Tomcab.CabalTest
   hs-source-dirs:
       test
   build-depends:
       base
+    , containers
     , tasty
     , tasty-autocollect
+    , tasty-hunit
+    , text
     , tomcab
+    , toml-reader
+    , unliftio
   build-tool-depends:
       tasty-autocollect:tasty-autocollect
   default-extensions:

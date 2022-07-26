@@ -9,17 +9,15 @@ module Tomcab (
 ) where
 
 import Control.Monad (when)
-import Data.Bifunctor (first)
 import Data.Foldable (asum)
 import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
-import Data.Typeable (cast)
 import System.Directory (getCurrentDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeDirectory, takeFileName, (</>))
-import TOML (TOMLError, decode, renderTOMLError)
+import TOML (TOMLError, decode)
 import UnliftIO.Exception (Exception (..), fromEither, handleAny)
 
 import Tomcab.Cabal
@@ -27,6 +25,7 @@ import Tomcab.Render
 import Tomcab.Resolve
 import Tomcab.Resolve.Phases
 import Tomcab.Utils.FilePath
+import Tomcab.Utils.TOML ()
 
 runTomcab :: Maybe [FilePath] -> IO ()
 runTomcab = \case
@@ -57,9 +56,8 @@ loadPackage fp = do
   -- TODO: loadPackage all files mentioned in `extends`
   resolvePackage pkg
 
--- TODO: Remove ParseError: https://github.com/brandonchinn178/toml-reader/issues/13
 parsePackage :: Text -> IO (Package Unresolved)
-parsePackage = fromEither . first ParseError . decode
+parsePackage = fromEither . decode
 
 {----- Errors -----}
 
@@ -71,9 +69,9 @@ data TomcabError
 instance Exception TomcabError where
   fromException e =
     asum
-      [ cast e -- https://github.com/brandonchinn178/toml-reader/issues/13
+      [ ParseError <$> fromException e
       , ResolutionError <$> fromException e
       ]
   displayException = \case
-    ParseError e -> Text.unpack $ renderTOMLError e
+    ParseError e -> displayException e
     ResolutionError e -> displayException e
