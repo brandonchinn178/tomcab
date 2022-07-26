@@ -98,8 +98,8 @@ resolveAutoImports Package{..} =
 
 resolveImports :: Package PreResolveImports -> IO (Package PostResolveImports)
 resolveImports Package{..} = do
-  packageLibraries' <- fromEither $ mapM resolveLib packageLibraries
-  packageExecutables' <- fromEither $ mapM resolveExe packageExecutables
+  packageLibraries' <- fromEither $ mapM resolve packageLibraries
+  packageExecutables' <- fromEither $ mapM resolve packageExecutables
   pure
     Package
       { packageCommonStanzas = unset
@@ -108,13 +108,26 @@ resolveImports Package{..} = do
       , ..
       }
   where
-    resolveLib PackageLibrary{..} = do
-      packageLibraryInfo' <- mergeImports packageCommonStanzas resolveLib packageLibraryInfo
-      pure PackageLibrary{packageLibraryInfo = packageLibraryInfo', ..}
+    resolve ::
+      ( HasPackageBuildInfo parent
+      , CanResolveImports parent
+      , FromCommonStanza PreResolveImports parent
+      ) =>
+      parent PreResolveImports ->
+      ResolveM (parent PostResolveImports)
+    resolve parent = do
+      info <- mergeImports packageCommonStanzas resolve (getBuildInfo parent)
+      pure $ setResolvedImports info parent
 
-    resolveExe PackageExecutable{..} = do
-      packageExeInfo' <- mergeImports packageCommonStanzas resolveExe packageExeInfo
-      pure PackageExecutable{packageExeInfo = packageExeInfo', ..}
+class CanResolveImports parent where
+  setResolvedImports ::
+    PackageBuildInfo PostResolveImports parent ->
+    parent PreResolveImports ->
+    parent PostResolveImports
+instance CanResolveImports PackageLibrary where
+  setResolvedImports info PackageLibrary{..} = PackageLibrary{packageLibraryInfo = info, ..}
+instance CanResolveImports PackageExecutable where
+  setResolvedImports info PackageExecutable{..} = PackageExecutable{packageExeInfo = info, ..}
 
 mergeImports ::
   FromCommonStanza PreResolveImports parent =>
@@ -171,8 +184,8 @@ mergeCommonStanza (CommonStanza commonInfo) info =
 
 resolveModules :: Package PreResolveModules -> IO (Package PostResolveModules)
 resolveModules Package{..} = do
-  packageLibraries' <- mapM resolveLib packageLibraries
-  packageExecutables' <- mapM resolveExe packageExecutables
+  packageLibraries' <- mapM resolve packageLibraries
+  packageExecutables' <- mapM resolve packageExecutables
   pure
     Package
       { packageLibraries = packageLibraries'
@@ -180,35 +193,46 @@ resolveModules Package{..} = do
       , ..
       }
   where
-    resolveLib PackageLibrary{..} = do
-      (exposedModules, otherModules) <- resolveModulePatterns packageExposedModules packageLibraryInfo
-      packageLibraryInfo' <- resolveInfoWith resolveLib otherModules packageLibraryInfo
-      pure
-        PackageLibrary
-          { packageExposedModules = exposedModules
-          , packageLibraryInfo = packageLibraryInfo'
-          , ..
-          }
+    resolve ::
+      ( HasPackageBuildInfo parent
+      , CanResolveModules parent
+      ) =>
+      parent PreResolveModules ->
+      IO (parent PostResolveModules)
+    resolve parent = do
+      let info = getBuildInfo parent
+      (exposedModules, otherModules) <- resolveModulePatterns (getExposedModules parent) info
+      info' <- resolveInfo otherModules info
+      pure $ setResolvedModules exposedModules info' parent
 
-    resolveExe :: PackageExecutable PreResolveModules -> IO (PackageExecutable PostResolveModules)
-    resolveExe PackageExecutable{..} = do
-      (_, otherModules) <- resolveModulePatterns [] packageExeInfo
-      packageExeInfo' <- resolveInfoWith resolveExe otherModules packageExeInfo
-      pure PackageExecutable{packageExeInfo = packageExeInfo', ..}
-
-    resolveInfoWith ::
-      (parent PreResolveModules -> IO (parent PostResolveModules)) ->
-      [Module] ->
-      PackageBuildInfo PreResolveModules parent ->
-      IO (PackageBuildInfo PostResolveModules parent)
-    resolveInfoWith resolveParent otherModules PackageBuildInfo{..} = do
-      packageInfoIfs' <- mapM (traverse resolveParent) packageInfoIfs
+    resolveInfo otherModules PackageBuildInfo{..} = do
+      packageInfoIfs' <- mapM (traverse resolve) packageInfoIfs
       pure
         PackageBuildInfo
           { packageOtherModules = otherModules
           , packageInfoIfs = packageInfoIfs'
           , ..
           }
+
+class CanResolveModules parent where
+  getExposedModules :: parent PreResolveModules -> [ModulePattern]
+  getExposedModules _ = []
+
+  setResolvedModules ::
+    [Module] ->
+    PackageBuildInfo PostResolveModules parent ->
+    parent PreResolveModules ->
+    parent PostResolveModules
+instance CanResolveModules PackageLibrary where
+  getExposedModules = packageExposedModules
+  setResolvedModules exposedModules info PackageLibrary{..} =
+    PackageLibrary
+      { packageExposedModules = exposedModules
+      , packageLibraryInfo = info
+      , ..
+      }
+instance CanResolveModules PackageExecutable where
+  setResolvedModules _ info PackageExecutable{..} = PackageExecutable{packageExeInfo = info, ..}
 
 data ModuleVisibility = Exposed | Other
   deriving (Eq)
@@ -299,12 +323,15 @@ coerceInfoWith coerceParent PackageBuildInfo{..} =
 {----- PackageBuildInfo + CommonStanza helpers -----}
 
 class HasPackageBuildInfo parent where
+  getBuildInfo :: parent phase -> PackageBuildInfo phase parent
   modifyBuildInfo :: (PackageBuildInfo phase parent -> PackageBuildInfo phase parent) -> (parent phase -> parent phase)
 
 instance HasPackageBuildInfo PackageLibrary where
+  getBuildInfo = packageLibraryInfo
   modifyBuildInfo f lib = lib{packageLibraryInfo = f (packageLibraryInfo lib)}
 
 instance HasPackageBuildInfo PackageExecutable where
+  getBuildInfo = packageExeInfo
   modifyBuildInfo f exe = exe{packageExeInfo = f (packageExeInfo exe)}
 
 class FromCommonStanza phase parent where
