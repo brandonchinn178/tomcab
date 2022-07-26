@@ -122,15 +122,17 @@ instance DecodeTOML (PackageLibrary Unresolved) where
 
 data PackageExecutable (phase :: ResolutionPhase) = PackageExecutable
   { packageExeName :: Maybe Text
+  , packageExeMainIs :: Maybe Text
   , packageExeInfo :: PackageBuildInfo phase PackageExecutable
   }
 
 instance DecodeTOML (PackageExecutable Unresolved) where
   tomlDecoder = do
-    remainingFields <- getAllExcept ["name"]
+    remainingFields <- getAllExcept ["name", "main-is"]
     exe <-
       PackageExecutable
         <$> getFieldOpt "name"
+        <*> getFieldOpt "main-is"
         <*> pure emptyPackageBuildInfo
 
     info <- decodePackageBuildInfo remainingFields
@@ -140,16 +142,18 @@ instance DecodeTOML (PackageExecutable Unresolved) where
 data PackageTestSuite (phase :: ResolutionPhase) = PackageTestSuite
   { packageTestName :: Maybe Text
   , packageTestType :: NonNullAfterParsed phase Text
+  , packageTestMainIs :: Maybe Text
   , packageTestInfo :: PackageBuildInfo phase PackageTestSuite
   }
 
 instance DecodeTOML (PackageTestSuite Unresolved) where
   tomlDecoder = do
-    remainingFields <- getAllExcept ["name", "type"]
+    remainingFields <- getAllExcept ["name", "type", "main-is"]
     test <-
       PackageTestSuite
         <$> getFieldOpt "name"
         <*> getFieldOpt "type"
+        <*> getFieldOpt "main-is"
         <*> pure emptyPackageBuildInfo
 
     info <- decodePackageBuildInfo remainingFields

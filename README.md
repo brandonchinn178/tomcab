@@ -30,7 +30,8 @@ With some exceptions, all fields should be either a String or a list of String, 
 
 * `exposed-modules`/`other-modules`: These fields support glob patterns, which automatically search through `hs-source-dirs` and include any found module in the closest matching pattern.
     * `*` must ONLY be at the end; e.g. `Foo.*`
-    * If both `Foo.*` and `Foo.Bar` are specified, `Foo` will match `Foo.*`, `Foo.Bar` will match `Foo.Bar`, and `Foo.Bar.Baz` will match `Foo.*`.
+    * If both `Foo.*` and `Foo.Bar` are specified, `Foo` will match `Foo.*`, `Foo.Bar` will match `Foo.Bar`, and `Foo.Bar.Baz` will match `Foo.*`
+    * `main-is` modules will be automatically excluded
 
 * `build-depends`: Can either be a list of strings as normal, or a table mapping library to version constraints. For example, the following are all equivalent:
 

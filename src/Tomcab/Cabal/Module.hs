@@ -14,6 +14,8 @@ module Tomcab.Cabal.Module (
 
   -- * Resolved module
   Module (..),
+  moduleToPattern,
+  patternToModule,
 ) where
 
 import Control.Monad (forM_)
@@ -60,9 +62,6 @@ instance DecodeTOML ModulePattern where
       badPattern = makeDecoder $ invalidValue "Invalid ModulePattern"
       unsnoc xs = (NonEmpty.init xs, NonEmpty.last xs)
 
-newtype Module = Module [Text]
-  deriving (Show, Eq, Ord)
-
 -- | Return the annotation of the closest matching pattern for the given module.
 lookupPatternMatch :: Module -> [(ModulePattern, a)] -> Maybe a
 lookupPatternMatch (Module modl) = fmap snd . find isMatch . sortByPathDesc . filter isPossibleMatch
@@ -70,3 +69,15 @@ lookupPatternMatch (Module modl) = fmap snd . find isMatch . sortByPathDesc . fi
     sortByPathDesc = sortOn (Down . length . modulePath . fst)
     isPossibleMatch = (`isPrefixOf` modl) . modulePath . fst
     isMatch (ModulePattern{..}, _) = modulePatternHasWildcard || modulePath == modl
+
+newtype Module = Module [Text]
+  deriving (Show, Eq, Ord)
+
+moduleToPattern :: Module -> ModulePattern
+moduleToPattern (Module path) = ModulePattern path False
+
+patternToModule :: ModulePattern -> Maybe Module
+patternToModule ModulePattern{..} =
+  if modulePatternHasWildcard
+    then Nothing
+    else Just $ Module modulePath

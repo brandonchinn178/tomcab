@@ -16,10 +16,10 @@ module Tomcab.Resolve (
   ResolutionError (..),
 ) where
 
-import Control.Monad ((>=>))
+import Control.Monad ((<=<), (>=>))
 import Data.Either (partitionEithers)
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -40,7 +40,7 @@ import Tomcab.Cabal (
   PackageLibrary (..),
   PackageTestSuite (..),
  )
-import Tomcab.Cabal.Module (lookupPatternMatch)
+import Tomcab.Cabal.Module (lookupPatternMatch, moduleToPattern, patternToModule)
 import Tomcab.Resolve.Phases
 import Tomcab.Utils.FilePath (listDirectoryRecursive)
 
@@ -219,6 +219,7 @@ resolveModules Package{..} = do
       let info = getBuildInfo parent
           exposedModulesPatterns = getExposedModules parent
           otherModulesPatterns = packageOtherModules info
+          ignoredPatterns = getIgnoredModules parent
 
       let (exposedModulesExplicit, exposedModulesNonExplicit) = extractExplicitModules exposedModulesPatterns
           (otherModulesExplicit, otherModulesNonExplicit) = extractExplicitModules otherModulesPatterns
@@ -229,7 +230,7 @@ resolveModules Package{..} = do
             pure ([], [])
           else do
             modules <- concatMapM (listModules . Text.unpack) (packageHsSourceDirs info)
-            pure $ resolveModulePatterns (exposedModulesPatterns, otherModulesPatterns) modules
+            pure $ resolveModulePatterns (exposedModulesPatterns, otherModulesPatterns, ignoredPatterns) modules
 
       let exposedModules = nubSort $ exposedModulesExplicit ++ exposedModulesFound
           otherModules = nubSort $ otherModulesExplicit ++ otherModulesFound
@@ -259,6 +260,9 @@ class CanResolveModules parent where
   getExposedModules :: parent PreResolveModules -> [ModulePattern]
   getExposedModules _ = []
 
+  getIgnoredModules :: parent PreResolveModules -> [ModulePattern]
+  getIgnoredModules _ = []
+
   setResolvedModules ::
     [Module] ->
     PackageBuildInfo PostResolveModules parent ->
@@ -273,29 +277,32 @@ instance CanResolveModules PackageLibrary where
       , ..
       }
 instance CanResolveModules PackageExecutable where
+  getIgnoredModules = maybeToList . (toModulePattern <=< packageExeMainIs)
   setResolvedModules _ info PackageExecutable{..} = PackageExecutable{packageExeInfo = info, ..}
 instance CanResolveModules PackageTestSuite where
+  getIgnoredModules = maybeToList . (toModulePattern <=< packageTestMainIs)
   setResolvedModules _ info PackageTestSuite{..} = PackageTestSuite{packageTestInfo = info, ..}
 
 extractExplicitModules :: [ModulePattern] -> ([Module], [ModulePattern])
-extractExplicitModules = partitionMaybes parseExplicitModule
+extractExplicitModules = partitionMaybes patternToModule
   where
-    parseExplicitModule ModulePattern{..} =
-      if not modulePatternHasWildcard
-        then Just (Module modulePath)
-        else Nothing
     partitionMaybes f = partitionEithers . map (\x -> maybe (Right x) Left (f x))
 
-data ModulePatternType = ExposedPattern | OtherPattern
+data ModulePatternType = ExposedPattern | OtherPattern | IgnoredPattern
   deriving (Eq)
 
-resolveModulePatterns :: ([ModulePattern], [ModulePattern]) -> [Module] -> ([Module], [Module])
-resolveModulePatterns (exposedModules, otherModules) modules =
+resolveModulePatterns :: ([ModulePattern], [ModulePattern], [ModulePattern]) -> [Module] -> ([Module], [Module])
+resolveModulePatterns (exposedModules, otherModules, ignoreModules) modules =
   fromMatchResults $
     flip map modules $ \modl ->
       (modl, lookupPatternMatch modl patterns)
   where
-    patterns = map (,ExposedPattern) exposedModules ++ map (,OtherPattern) otherModules
+    patterns =
+      concat
+        [ map (,ExposedPattern) exposedModules
+        , map (,OtherPattern) otherModules
+        , map (,IgnoredPattern) ignoreModules
+        ]
 
     fromMatchResults = \case
       [] -> ([], [])
@@ -305,14 +312,19 @@ resolveModulePatterns (exposedModules, otherModules) modules =
               Nothing -> (exposed, other)
               Just ExposedPattern -> (modl : exposed, other)
               Just OtherPattern -> (exposed, modl : other)
+              Just IgnoredPattern -> (exposed, other)
 
 listModules :: FilePath -> IO [Module]
-listModules dir = mapMaybe toModule <$> listDirectoryRecursive dir
-  where
-    toModule fp =
-      case splitExtensions $ makeRelative dir fp of
-        (file, ".hs") -> Just $ Module $ Text.splitOn "/" $ Text.pack file
-        _ -> Nothing
+listModules dir = mapMaybe (toModule . makeRelative dir) <$> listDirectoryRecursive dir
+
+toModule :: FilePath -> Maybe Module
+toModule fp =
+  case splitExtensions fp of
+    (file, ".hs") -> Just $ Module $ Text.splitOn "/" $ Text.pack file
+    _ -> Nothing
+
+toModulePattern :: Text -> Maybe ModulePattern
+toModulePattern = fmap moduleToPattern . toModule . Text.unpack
 
 {----- Errors -----}
 
@@ -422,11 +434,13 @@ instance FromCommonStanza phase PackageExecutable where
   fromCommonStanza (CommonStanza info) =
     PackageExecutable
       mempty
+      mempty
       (mapPackageBuildInfo fromCommonStanza info)
 
 instance FromCommonStanza PreResolveImports PackageTestSuite where
   fromCommonStanza (CommonStanza info) =
     PackageTestSuite
+      mempty
       mempty
       mempty
       (mapPackageBuildInfo fromCommonStanza info)

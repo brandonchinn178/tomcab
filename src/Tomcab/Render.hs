@@ -66,7 +66,8 @@ renderExecutable exe =
   where
     renderExecutableBody PackageExecutable{..} =
       joinLines
-        [ renderBuildInfo renderExecutableBody packageExeInfo
+        [ field "main-is" packageExeMainIs
+        , renderBuildInfo renderExecutableBody packageExeInfo
         ]
 
 renderTestSuite :: PackageTestSuite Resolved -> Text
@@ -79,6 +80,7 @@ renderTestSuite test =
     renderTestBody PackageTestSuite{..} =
       joinLines
         [ field "type" packageTestType
+        , field "main-is" packageTestMainIs
         , renderBuildInfo renderTestBody packageTestInfo
         ]
 

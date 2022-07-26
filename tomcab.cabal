@@ -32,6 +32,7 @@ library
       "-Wall"
 
 executable tomcab
+  main-is: Main.hs
   hs-source-dirs:
       exe
   build-depends:
@@ -42,9 +43,9 @@ executable tomcab
   default-language: Haskell2010
   ghc-options:
       "-Wall"
-  main-is: Main.hs
 
 executable stack-tomcab
+  main-is: Stack.hs
   other-modules:
       Wrapper
   hs-source-dirs:
@@ -58,13 +59,13 @@ executable stack-tomcab
   default-language: Haskell2010
   ghc-options:
       "-Wall"
-  main-is: Stack.hs
 
   if !os(windows)
     build-depends:
         unix < 3
 
 executable cabal-tomcab
+  main-is: Cabal.hs
   other-modules:
       Wrapper
   hs-source-dirs:
@@ -78,7 +79,6 @@ executable cabal-tomcab
   default-language: Haskell2010
   ghc-options:
       "-Wall"
-  main-is: Cabal.hs
 
   if !os(windows)
     build-depends:
@@ -86,8 +86,7 @@ executable cabal-tomcab
 
 test-suite tomcab-tests
   type: exitcode-stdio-1.0
-  other-modules:
-      Main
+  main-is: Main.hs
   hs-source-dirs:
       test
   build-depends:
@@ -104,4 +103,3 @@ test-suite tomcab-tests
       "-Wall"
       "-F"
       "-pgmF=tasty-autocollect"
-  main-is: Main.hs
