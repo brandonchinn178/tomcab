@@ -18,7 +18,7 @@ import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import System.FilePath (makeRelative, splitExtensions)
-import UnliftIO.Exception (Exception (..), throwIO)
+import UnliftIO.Exception (Exception (..), fromEither, throwIO)
 
 import Tomcab.Cabal (
   CommonStanza (..),
@@ -91,8 +91,8 @@ resolveAutoImports Package{..} =
 
 resolveImports :: Package PreResolveImports -> IO (Package PostResolveImports)
 resolveImports Package{..} = do
-  packageLibraries' <- mapM resolveLib packageLibraries
-  packageExecutables' <- mapM resolveExe packageExecutables
+  packageLibraries' <- fromEither $ mapM resolveLib packageLibraries
+  packageExecutables' <- fromEither $ mapM resolveExe packageExecutables
   pure
     Package
       { packageCommonStanzas = Map.empty
@@ -108,12 +108,12 @@ mergeImports ::
   (HasPackageBuildInfo a, FromCommonStanza a) =>
   CommonStanzas ->
   PackageBuildInfo a ->
-  IO (PackageBuildInfo a)
+  ResolveM (PackageBuildInfo a)
 mergeImports commonStanzas info0 = go (packageImport info0) info0
   where
     go (imp : imps) info =
       case imp `Map.lookup` commonStanzas of
-        Nothing -> throwIO $ UnknownCommonStanza imp
+        Nothing -> Left $ UnknownCommonStanza imp
         Just commonStanza ->
           go
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
@@ -192,6 +192,8 @@ listModules dir = mapMaybe toModule <$> listDirectoryRecursive dir
         _ -> Nothing
 
 {----- Errors -----}
+
+type ResolveM a = Either ResolutionError a
 
 data ResolutionError
   = MissingPackageName
