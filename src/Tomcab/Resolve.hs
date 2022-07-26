@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -18,9 +17,10 @@ module Tomcab.Resolve (
 ) where
 
 import Control.Monad ((>=>))
-import Data.List (sort)
+import Data.Either (partitionEithers)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import System.FilePath (makeRelative, splitExtensions)
@@ -217,10 +217,32 @@ resolveModules Package{..} = do
       IO (parent PostResolveModules)
     resolve parent = do
       let info = getBuildInfo parent
-      (exposedModules, otherModules) <- resolveModulePatterns (getExposedModules parent) info
+          exposedModulesPatterns = getExposedModules parent
+          otherModulesPatterns = packageOtherModules info
+
+      let (exposedModulesExplicit, exposedModulesNonExplicit) = extractExplicitModules exposedModulesPatterns
+          (otherModulesExplicit, otherModulesNonExplicit) = extractExplicitModules otherModulesPatterns
+
+      (exposedModulesFound, otherModulesFound) <-
+        if null exposedModulesNonExplicit && null otherModulesNonExplicit
+          then -- if everything's explicit, don't bother listing modules + pattern matching
+            pure ([], [])
+          else do
+            modules <- concatMapM (listModules . Text.unpack) (packageHsSourceDirs info)
+            pure $ resolveModulePatterns (exposedModulesPatterns, otherModulesPatterns) modules
+
+      let exposedModules = nubSort $ exposedModulesExplicit ++ exposedModulesFound
+          otherModules = nubSort $ otherModulesExplicit ++ otherModulesFound
       info' <- resolveInfo otherModules info
       pure $ setResolvedModules exposedModules info' parent
 
+    resolveInfo ::
+      ( HasPackageBuildInfo parent
+      , CanResolveModules parent
+      ) =>
+      [Module] ->
+      PackageBuildInfo PreResolveModules parent ->
+      IO (PackageBuildInfo PostResolveModules parent)
     resolveInfo otherModules PackageBuildInfo{..} = do
       packageInfoIfs' <- mapM (traverse resolve) packageInfoIfs
       pure
@@ -229,6 +251,9 @@ resolveModules Package{..} = do
           , packageInfoIfs = packageInfoIfs'
           , ..
           }
+
+    concatMapM f = fmap concat . mapM f
+    nubSort = Set.toAscList . Set.fromList
 
 class CanResolveModules parent where
   getExposedModules :: parent PreResolveModules -> [ModulePattern]
@@ -252,22 +277,34 @@ instance CanResolveModules PackageExecutable where
 instance CanResolveModules PackageTestSuite where
   setResolvedModules _ info PackageTestSuite{..} = PackageTestSuite{packageTestInfo = info, ..}
 
-data ModuleVisibility = Exposed | Other
+extractExplicitModules :: [ModulePattern] -> ([Module], [ModulePattern])
+extractExplicitModules = partitionMaybes parseExplicitModule
+  where
+    parseExplicitModule ModulePattern{..} =
+      if not modulePatternHasWildcard
+        then Just (Module modulePath)
+        else Nothing
+    partitionMaybes f = partitionEithers . map (\x -> maybe (Right x) Left (f x))
+
+data ModulePatternType = ExposedPattern | OtherPattern
   deriving (Eq)
 
-resolveModulePatterns :: [ModulePattern] -> PackageBuildInfo PreResolveModules parent -> IO ([Module], [Module])
-resolveModulePatterns exposedModules info = do
-  modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
-
-  let patterns = map (,Exposed) exposedModules ++ map (,Other) packageOtherModules
-  let matchedModules = zipMapMaybe (`lookupPatternMatch` patterns) modules
-      extract x = map fst . filter ((== x) . snd)
-  pure (extract Exposed matchedModules, extract Other matchedModules)
+resolveModulePatterns :: ([ModulePattern], [ModulePattern]) -> [Module] -> ([Module], [Module])
+resolveModulePatterns (exposedModules, otherModules) modules =
+  fromMatchResults $
+    flip map modules $ \modl ->
+      (modl, lookupPatternMatch modl patterns)
   where
-    PackageBuildInfo{packageHsSourceDirs, packageOtherModules} = info
+    patterns = map (,ExposedPattern) exposedModules ++ map (,OtherPattern) otherModules
 
-    concatMapM f = fmap concat . mapM f
-    zipMapMaybe f = mapMaybe (\x -> (x,) <$> f x)
+    fromMatchResults = \case
+      [] -> ([], [])
+      (modl, patternType) : matches ->
+        let (exposed, other) = fromMatchResults matches
+         in case patternType of
+              Nothing -> (exposed, other)
+              Just ExposedPattern -> (modl : exposed, other)
+              Just OtherPattern -> (exposed, modl : other)
 
 listModules :: FilePath -> IO [Module]
 listModules dir = mapMaybe toModule <$> listDirectoryRecursive dir
