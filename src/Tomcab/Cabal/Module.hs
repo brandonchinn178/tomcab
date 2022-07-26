@@ -1,17 +1,19 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Tomcab.Cabal.Module (
   -- * Module pattern
+  ModulePath,
   ModulePattern (..),
   lookupPatternMatch,
 
   -- * Resolved module
-  Module,
-  pattern Module,
+  Module (..),
 ) where
 
 import Control.Monad (forM_)
@@ -22,12 +24,21 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import TOML (DecodeTOML (..), invalidValue, makeDecoder)
 
+import Tomcab.Resolve.Phases (ResolutionPhase (..))
+
+type family ModulePath (phase :: ResolutionPhase) where
+  ModulePath 'Parsed = ModulePattern
+  ModulePath 'ResolvedOptionals = ModulePattern
+  ModulePath 'NoAutoImports = ModulePattern
+  ModulePath 'NoImports = ModulePattern
+  ModulePath _ = Module
+
 data ModulePattern = ModulePattern
-  { patternPath :: [Text]
-  , patternHasWildcard :: Bool
+  { modulePath :: [Text]
+  , modulePatternHasWildcard :: Bool
   -- ^ Does the pattern end with a wildcard?
   }
-  deriving (Show, Eq, Ord)
+  deriving (Show)
 
 instance DecodeTOML ModulePattern where
   tomlDecoder = tomlDecoder >>= decodePattern
@@ -35,12 +46,12 @@ instance DecodeTOML ModulePattern where
       decodePattern s = maybe badPattern pure $ do
         path <- NonEmpty.nonEmpty $ Text.splitOn "." s
 
-        let (patternPath, patternHasWildcard) =
+        let (modulePath, modulePatternHasWildcard) =
               case unsnoc path of
                 (path', "*") -> (path', True)
                 _ -> (NonEmpty.toList path, False)
 
-        forM_ patternPath $ \case
+        forM_ modulePath $ \case
           "*" -> Nothing
           _ -> pure ()
 
@@ -49,17 +60,13 @@ instance DecodeTOML ModulePattern where
       badPattern = makeDecoder $ invalidValue "Invalid ModulePattern"
       unsnoc xs = (NonEmpty.init xs, NonEmpty.last xs)
 
--- TODO: make a separate type
--- invariant: patternHasWildcard is False
-type Module = ModulePattern
-pattern Module :: [Text] -> ModulePattern
-pattern Module path = ModulePattern path False
-{-# COMPLETE Module #-}
+newtype Module = Module [Text]
+  deriving (Show, Eq, Ord)
 
 -- | Return the annotation of the closest matching pattern for the given module.
 lookupPatternMatch :: Module -> [(ModulePattern, a)] -> Maybe a
 lookupPatternMatch (Module modl) = fmap snd . find isMatch . sortByPathDesc . filter isPossibleMatch
   where
-    sortByPathDesc = sortOn (Down . length . patternPath . fst)
-    isPossibleMatch = (`isPrefixOf` modl) . patternPath . fst
-    isMatch (ModulePattern{..}, _) = patternHasWildcard || patternPath == modl
+    sortByPathDesc = sortOn (Down . length . modulePath . fst)
+    isPossibleMatch = (`isPrefixOf` modl) . modulePath . fst
+    isMatch (ModulePattern{..}, _) = modulePatternHasWildcard || modulePath == modl

@@ -6,7 +6,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -30,13 +29,13 @@ import Tomcab.Cabal (
   CommonStanza (..),
   CommonStanzas,
   Conditional (..),
-  Module,
-  ModulePattern,
+  Module (..),
+  ModulePath,
+  ModulePattern (..),
   Package (..),
   PackageBuildInfo (..),
   PackageExecutable (..),
   PackageLibrary (..),
-  pattern Module,
  )
 import Tomcab.Cabal.Module (lookupPatternMatch)
 import Tomcab.Resolve.Phases
@@ -178,23 +177,41 @@ resolveModules Package{..} = do
       , ..
       }
   where
-    setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
+    resolveLib PackageLibrary{..} = do
+      (exposedModules, otherModules) <- resolveModulePatterns packageExposedModules packageLibraryInfo
+      packageLibraryInfo' <- resolveInfoWith resolveLib otherModules packageLibraryInfo
+      pure
+        PackageLibrary
+          { packageExposedModules = exposedModules
+          , packageLibraryInfo = packageLibraryInfo'
+          , ..
+          }
 
-    resolveLib lib = do
-      (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
-      pure . coerceLib $ setOtherModules other lib{packageExposedModules = exposed}
+    resolveExe :: PackageExecutable PreResolveModules -> IO (PackageExecutable PostResolveModules)
+    resolveExe PackageExecutable{..} = do
+      (_, otherModules) <- resolveModulePatterns [] packageExeInfo
+      packageExeInfo' <- resolveInfoWith resolveExe otherModules packageExeInfo
+      pure PackageExecutable{packageExeInfo = packageExeInfo', ..}
 
-    resolveExe = fmap coerceExe . resolveComponent
-
-    resolveComponent parent = do
-      (_, other) <- resolveModulePatterns [] parent
-      pure $ setOtherModules other parent
+    resolveInfoWith ::
+      (parent PreResolveModules -> IO (parent PostResolveModules)) ->
+      [Module] ->
+      PackageBuildInfo PreResolveModules parent ->
+      IO (PackageBuildInfo PostResolveModules parent)
+    resolveInfoWith resolveParent otherModules PackageBuildInfo{..} = do
+      packageInfoIfs' <- mapM (traverse resolveParent) packageInfoIfs
+      pure
+        PackageBuildInfo
+          { packageOtherModules = otherModules
+          , packageInfoIfs = packageInfoIfs'
+          , ..
+          }
 
 data ModuleVisibility = Exposed | Other
   deriving (Eq)
 
-resolveModulePatterns :: HasPackageBuildInfo parent => [ModulePattern] -> parent PreResolveModules -> IO ([Module], [Module])
-resolveModulePatterns exposedModules parent = do
+resolveModulePatterns :: [ModulePattern] -> PackageBuildInfo PreResolveModules parent -> IO ([Module], [Module])
+resolveModulePatterns exposedModules info = do
   modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
 
   let patterns = map (,Exposed) exposedModules ++ map (,Other) packageOtherModules
@@ -202,7 +219,7 @@ resolveModulePatterns exposedModules parent = do
       extract x = map fst . filter ((== x) . snd)
   pure (extract Exposed matchedModules, extract Other matchedModules)
   where
-    PackageBuildInfo{packageHsSourceDirs, packageOtherModules} = getBuildInfo parent
+    PackageBuildInfo{packageHsSourceDirs, packageOtherModules} = info
 
     concatMapM f = fmap concat . mapM f
     zipMapMaybe f = mapMaybe (\x -> (x,) <$> f x)
@@ -262,6 +279,7 @@ coerceCommonStanza CommonStanza{..} =
 
 type CoerciblePackageBuildInfo phase1 phase2 =
   ( UnsetFrom 'NoImports phase1 [Text] ~ UnsetFrom 'NoImports phase2 [Text]
+  , ModulePath phase1 ~ ModulePath phase2
   )
 
 coerceInfoWith ::
@@ -278,16 +296,12 @@ coerceInfoWith coerceParent PackageBuildInfo{..} =
 {----- PackageBuildInfo + CommonStanza helpers -----}
 
 class HasPackageBuildInfo parent where
-  getBuildInfo :: parent phase -> PackageBuildInfo phase parent
-
   modifyBuildInfo :: (PackageBuildInfo phase parent -> PackageBuildInfo phase parent) -> (parent phase -> parent phase)
 
 instance HasPackageBuildInfo PackageLibrary where
-  getBuildInfo = packageLibraryInfo
   modifyBuildInfo f lib = lib{packageLibraryInfo = f (packageLibraryInfo lib)}
 
 instance HasPackageBuildInfo PackageExecutable where
-  getBuildInfo = packageExeInfo
   modifyBuildInfo f exe = exe{packageExeInfo = f (packageExeInfo exe)}
 
 class FromCommonStanza parent where

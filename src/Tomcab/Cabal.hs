@@ -6,7 +6,6 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
@@ -29,9 +28,7 @@ module Tomcab.Cabal (
   CabalValue (..),
 
   -- * Re-exports
-  ModulePattern (..),
-  Module,
-  pattern Module,
+  module Tomcab.Cabal.Module,
 ) where
 
 import Control.Applicative ((<|>))
@@ -106,7 +103,7 @@ instance DecodeTOML (Package Unresolved) where
 
 data PackageLibrary (phase :: ResolutionPhase) = PackageLibrary
   { packageLibraryName :: Maybe Text
-  , packageExposedModules :: [ModulePattern]
+  , packageExposedModules :: [ModulePath phase]
   , packageLibraryInfo :: PackageBuildInfo phase PackageLibrary
   }
 
@@ -190,7 +187,7 @@ deriving newtype instance DecodeTOML (CommonStanza Unresolved)
 data PackageBuildInfo (phase :: ResolutionPhase) parent = PackageBuildInfo
   { packageImport :: UnsetFrom 'NoImports phase [Text]
   , packageBuildDepends :: [Text]
-  , packageOtherModules :: [ModulePattern]
+  , packageOtherModules :: [ModulePath phase]
   , packageHsSourceDirs :: [Text]
   , packageInfoIfs :: [Conditional (parent phase)]
   , packageInfoFields :: CabalFields
