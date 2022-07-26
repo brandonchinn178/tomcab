@@ -15,6 +15,7 @@ import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
+import Data.Typeable (cast)
 import System.Directory (getCurrentDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeDirectory, takeFileName, (</>))
@@ -70,7 +71,7 @@ data TomcabError
 instance Exception TomcabError where
   fromException e =
     asum
-      [ fromException e -- https://github.com/brandonchinn178/toml-reader/issues/13
+      [ cast e -- https://github.com/brandonchinn178/toml-reader/issues/13
       , ResolutionError <$> fromException e
       ]
   displayException = \case
