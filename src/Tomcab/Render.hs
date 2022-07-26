@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Tomcab.Render (renderPackage) where
@@ -15,12 +14,11 @@ import Tomcab.Cabal (
   CabalFields,
   CabalValue (..),
   Conditional (..),
-  Module,
+  Module (..),
   Package (..),
   PackageBuildInfo (..),
   PackageExecutable (..),
   PackageLibrary (..),
-  pattern Module,
  )
 import Tomcab.Resolve.Phases (Resolved)
 
