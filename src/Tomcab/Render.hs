@@ -7,6 +7,8 @@ module Tomcab.Render (renderPackage) where
 import Data.List (intersperse)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 
@@ -132,13 +134,42 @@ field :: ToCabalField a => Text -> a -> Text
 field label a =
   case toCabalFieldMaybe a of
     Nothing -> ""
-    Just (CabalValue t) -> label <> ": " <> t
-    Just (CabalListValue []) -> ""
-    Just (CabalListValue (t : ts)) ->
-      joinLines
-        [ label <> ":"
-        , indent . joinLines $ ("  " <> t) : map (", " <>) ts
-        ]
+    Just (CabalValue v) -> label <> ": " <> v
+    Just (CabalListValue vals) ->
+      case map renderListVal vals of
+        [] -> ""
+        v : vs ->
+          joinLines
+            [ label <> ":"
+            , indent . joinLines $ ("  " <> v) : map (Text.pack [sep, ' '] <>) vs
+            ]
+  where
+    (sep, renderListVal)
+      | label `Set.member` tokenListFields = (' ', quote)
+      | otherwise = (',', id)
+    quote s = "\"" <> s <> "\""
 
 fields :: CabalFields -> Text
 fields = joinLines . map (uncurry field) . Map.toAscList
+
+-- | Cabal fields typed as 'token list', which should NOT use commas.
+tokenListFields :: Set Text
+tokenListFields =
+  Set.fromList
+    [ "ghc-options"
+    , "ghc-prof-options"
+    , "ghc-shared-options"
+    , "ghcjs-options"
+    , "ghcjs-prof-options"
+    , "ghcjs-shared-options"
+    , "extra-libraries"
+    , "extra-ghci-libraries"
+    , "extra-bundled-libraries"
+    , "cc-options"
+    , "cpp-options"
+    , "cxx-options"
+    , "cmm-options"
+    , "asm-options"
+    , "ld-options"
+    , "frameworks"
+    ]

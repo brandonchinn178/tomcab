@@ -29,7 +29,7 @@ library
       ImportQualifiedPost
   default-language: Haskell2010
   ghc-options:
-      -Wall
+      "-Wall"
 
 executable tomcab
   hs-source-dirs:
@@ -41,7 +41,7 @@ executable tomcab
       ImportQualifiedPost
   default-language: Haskell2010
   ghc-options:
-      -Wall
+      "-Wall"
   main-is: Main.hs
 
 executable stack-tomcab
@@ -57,7 +57,7 @@ executable stack-tomcab
       ImportQualifiedPost
   default-language: Haskell2010
   ghc-options:
-      -Wall
+      "-Wall"
   main-is: Stack.hs
 
   if !os(windows)
@@ -77,7 +77,7 @@ executable cabal-tomcab
       ImportQualifiedPost
   default-language: Haskell2010
   ghc-options:
-      -Wall
+      "-Wall"
   main-is: Cabal.hs
 
   if !os(windows)
