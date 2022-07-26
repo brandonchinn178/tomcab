@@ -139,7 +139,7 @@ instance FromCommonStanza PackageLibrary where
     PackageLibrary
       mempty
       mempty
-      (fromCommonStanza <$> info)
+      (mapPackageBuildInfo fromCommonStanza info)
 
 data PackageExecutable = PackageExecutable
   { packageExeName :: Maybe Text
@@ -169,7 +169,7 @@ instance FromCommonStanza PackageExecutable where
   fromCommonStanza (CommonStanza info) =
     PackageExecutable
       mempty
-      (fromCommonStanza <$> info)
+      (mapPackageBuildInfo fromCommonStanza info)
 
 -- TODO
 data PackageTest = PackageTest Value
@@ -229,7 +229,7 @@ data PackageBuildInfo a = PackageBuildInfo
   , packageInfoIfs :: [Conditional a]
   , packageInfoFields :: CabalFields
   }
-  deriving (Show, Functor)
+  deriving (Show)
 
 instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
   tomlDecoder = do
@@ -262,6 +262,12 @@ emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty mempty memp
 
 decodePackageBuildInfo :: DecodeTOML a => Map Text Value -> Decoder (PackageBuildInfo a)
 decodePackageBuildInfo = applyDecoder tomlDecoder . Table
+
+mapPackageBuildInfo :: (a -> b) -> PackageBuildInfo a -> PackageBuildInfo b
+mapPackageBuildInfo f info =
+  info
+    { packageInfoIfs = map (fmap f) (packageInfoIfs info)
+    }
 
 {----- CabalFields + CabalValue -----}
 
