@@ -76,8 +76,7 @@ resolveOptionals Package{..} = do
 {----- ResolveAutoImports -----}
 
 resolveAutoImports :: Package PreResolveAutoImports -> IO (Package PostResolveAutoImports)
-resolveAutoImports Package{..} = do
-  let addAutoImports info = info{packageImport = packageAutoImport ++ packageImport info}
+resolveAutoImports Package{..} =
   pure
     Package
       { packageAutoImport = []
@@ -85,14 +84,15 @@ resolveAutoImports Package{..} = do
       , packageExecutables = map (modifyBuildInfo addAutoImports) packageExecutables
       , ..
       }
+  where
+    addAutoImports info = info{packageImport = packageAutoImport ++ packageImport info}
 
 {----- ResolveImports -----}
 
 resolveImports :: Package PreResolveImports -> IO (Package PostResolveImports)
 resolveImports Package{..} = do
-  let commonStanzas = packageCommonStanzas
-  packageLibraries' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) packageLibraries
-  packageExecutables' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) packageExecutables
+  packageLibraries' <- mapM resolveLib packageLibraries
+  packageExecutables' <- mapM resolveExe packageExecutables
   pure
     Package
       { packageCommonStanzas = Map.empty
@@ -100,6 +100,9 @@ resolveImports Package{..} = do
       , packageExecutables = packageExecutables'
       , ..
       }
+  where
+    resolveLib = modifyBuildInfoM (mergeImports packageCommonStanzas)
+    resolveExe = modifyBuildInfoM (mergeImports packageCommonStanzas)
 
 mergeImports ::
   (HasPackageBuildInfo a, FromCommonStanza a) =>
@@ -108,7 +111,6 @@ mergeImports ::
   IO (PackageBuildInfo a)
 mergeImports commonStanzas info0 = go (packageImport info0) info0
   where
-    go [] info = pure info{packageImport = []}
     go (imp : imps) info =
       case imp `Map.lookup` commonStanzas of
         Nothing -> throwIO $ UnknownCommonStanza imp
@@ -116,6 +118,7 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
           go
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
             (mergeCommonStanza commonStanza info)
+    go [] info = pure info{packageImport = []}
 
 mergeCommonStanza ::
   (HasPackageBuildInfo a, FromCommonStanza a) =>
@@ -144,14 +147,6 @@ mergeCommonStanza (CommonStanza commonInfo) info =
 
 resolveModules :: Package PreResolveModules -> IO (Package PostResolveModules)
 resolveModules Package{..} = do
-  let setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
-      resolveLibraryModules lib = do
-        (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
-        pure $ setOtherModules other lib{packageExposedModules = exposed}
-      resolveComponentModules parent = do
-        (_, other) <- resolveModulePatterns [] parent
-        pure $ setOtherModules other parent
-
   packageLibraries' <- mapM resolveLibraryModules packageLibraries
   packageExecutables' <- mapM resolveComponentModules packageExecutables
   pure
@@ -160,6 +155,16 @@ resolveModules Package{..} = do
       , packageExecutables = packageExecutables'
       , ..
       }
+  where
+    setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
+
+    resolveLibraryModules lib = do
+      (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
+      pure $ setOtherModules other lib{packageExposedModules = exposed}
+
+    resolveComponentModules parent = do
+      (_, other) <- resolveModulePatterns [] parent
+      pure $ setOtherModules other parent
 
 data ModuleVisibility = Exposed | Other
   deriving (Eq)
