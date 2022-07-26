@@ -41,7 +41,7 @@ renderPackage Package{..} =
   where
     stripTrailingSpaces = Text.unlines . map Text.stripEnd . Text.lines
 
-renderLibrary :: PackageLibrary -> Text
+renderLibrary :: PackageLibrary Resolved -> Text
 renderLibrary lib =
   joinLines
     [ "library " <> fromMaybe "" (packageLibraryName lib)
@@ -54,7 +54,7 @@ renderLibrary lib =
         , renderBuildInfo renderLibraryBody packageLibraryInfo
         ]
 
-renderExecutable :: PackageExecutable -> Text
+renderExecutable :: PackageExecutable Resolved -> Text
 renderExecutable exe =
   joinLines
     [ "executable " <> fromMaybe "" (packageExeName exe)
@@ -66,7 +66,7 @@ renderExecutable exe =
         [ renderBuildInfo renderExecutableBody packageExeInfo
         ]
 
-renderBuildInfo :: (a -> Text) -> PackageBuildInfo a -> Text
+renderBuildInfo :: (parent Resolved -> Text) -> PackageBuildInfo Resolved parent -> Text
 renderBuildInfo renderParent PackageBuildInfo{..} =
   joinLines
     [ field "other-modules" (map renderModule packageOtherModules)

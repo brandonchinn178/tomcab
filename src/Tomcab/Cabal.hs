@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Tomcab.Cabal (
   Package (..),
@@ -23,8 +25,6 @@ module Tomcab.Cabal (
   -- * Shared build information
   PackageBuildInfo (..),
   HasPackageBuildInfo (..),
-  emptyPackageBuildInfo,
-  decodePackageBuildInfo,
 
   -- * CabalFields + CabalValue
   CabalFields,
@@ -69,9 +69,9 @@ data Package (phase :: ResolutionPhase) = Package
   , packageVersion :: Maybe Text
   , packageCabalVersion :: MaybeWhenParsed phase Text
   , packageBuildType :: MaybeWhenParsed phase Text
-  , packageCommonStanzas :: CommonStanzas
-  , packageLibraries :: [PackageLibrary]
-  , packageExecutables :: [PackageExecutable]
+  , packageCommonStanzas :: CommonStanzas phase
+  , packageLibraries :: [PackageLibrary phase]
+  , packageExecutables :: [PackageExecutable phase]
   , packageTests :: [PackageTest]
   , packageAutoImport :: [Text]
   , packageFields :: CabalFields
@@ -108,14 +108,13 @@ instance DecodeTOML (Package Unresolved) where
 
     pure package{packageFields = fields}
 
-data PackageLibrary = PackageLibrary
+data PackageLibrary (phase :: ResolutionPhase) = PackageLibrary
   { packageLibraryName :: Maybe Text
   , packageExposedModules :: [ModulePattern]
-  , packageLibraryInfo :: PackageBuildInfo PackageLibrary
+  , packageLibraryInfo :: PackageBuildInfo phase PackageLibrary
   }
-  deriving (Show)
 
-instance DecodeTOML PackageLibrary where
+instance DecodeTOML (PackageLibrary Unresolved) where
   tomlDecoder = do
     remainingFields <- getAllExcept ["name", "exposed-modules"]
     library <-
@@ -141,13 +140,12 @@ instance FromCommonStanza PackageLibrary where
       mempty
       (mapPackageBuildInfo fromCommonStanza info)
 
-data PackageExecutable = PackageExecutable
+data PackageExecutable (phase :: ResolutionPhase) = PackageExecutable
   { packageExeName :: Maybe Text
-  , packageExeInfo :: PackageBuildInfo PackageExecutable
+  , packageExeInfo :: PackageBuildInfo phase PackageExecutable
   }
-  deriving (Show)
 
-instance DecodeTOML PackageExecutable where
+instance DecodeTOML (PackageExecutable Unresolved) where
   tomlDecoder = do
     remainingFields <- getAllExcept ["name"]
     exe <-
@@ -184,7 +182,7 @@ data Conditional a = Conditional
   , conditionElif :: [(Text, a)]
   , conditionElse :: Maybe a
   }
-  deriving (Show, Functor)
+  deriving (Show, Functor, Foldable, Traversable)
 
 instance DecodeTOML a => DecodeTOML (Conditional a) where
   tomlDecoder = do
@@ -208,30 +206,29 @@ instance DecodeTOML a => DecodeTOML (Conditional a) where
 
 {----- Common stanzas -----}
 
-type CommonStanzas = Map Text CommonStanza
+type CommonStanzas (phase :: ResolutionPhase) = Map Text (CommonStanza phase)
 
-newtype CommonStanza = CommonStanza
-  { commonStanzaInfo :: PackageBuildInfo CommonStanza
+newtype CommonStanza (phase :: ResolutionPhase) = CommonStanza
+  { commonStanzaInfo :: PackageBuildInfo phase CommonStanza
   }
-  deriving (Show, DecodeTOML)
 
-class FromCommonStanza a where
-  fromCommonStanza :: CommonStanza -> a
+deriving newtype instance DecodeTOML (CommonStanza Unresolved)
+
+class FromCommonStanza parent where
+  fromCommonStanza :: CommonStanza phase -> parent phase
 
 {----- Shared build information -----}
 
--- invariant: after resolveImports, packageImport is empty
-data PackageBuildInfo a = PackageBuildInfo
+data PackageBuildInfo (phase :: ResolutionPhase) parent = PackageBuildInfo
   { packageImport :: [Text]
   , packageBuildDepends :: [Text]
   , packageOtherModules :: [ModulePattern]
   , packageHsSourceDirs :: [Text]
-  , packageInfoIfs :: [Conditional a]
+  , packageInfoIfs :: [Conditional (parent phase)]
   , packageInfoFields :: CabalFields
   }
-  deriving (Show)
 
-instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
+instance DecodeTOML (parent Unresolved) => DecodeTOML (PackageBuildInfo Unresolved parent) where
   tomlDecoder = do
     remainingFields <- getAllExcept ["import", "build-depends", "other-modules", "hs-source-dirs", "if"]
     info <-
@@ -249,21 +246,21 @@ instance DecodeTOML a => DecodeTOML (PackageBuildInfo a) where
     where
       buildDependsFromTable = map (\(k, v) -> k <> " " <> v) . Map.toList
 
-class HasPackageBuildInfo a where
-  getBuildInfo :: a -> PackageBuildInfo a
+class HasPackageBuildInfo parent where
+  getBuildInfo :: parent phase -> PackageBuildInfo phase parent
 
-  modifyBuildInfo :: (PackageBuildInfo a -> PackageBuildInfo a) -> (a -> a)
+  modifyBuildInfo :: (PackageBuildInfo phase1 parent -> PackageBuildInfo phase2 parent) -> (parent phase1 -> parent phase2)
   modifyBuildInfo f = runIdentity . modifyBuildInfoM (pure . f)
 
-  modifyBuildInfoM :: Monad m => (PackageBuildInfo a -> m (PackageBuildInfo a)) -> (a -> m a)
+  modifyBuildInfoM :: Monad m => (PackageBuildInfo phase1 parent -> m (PackageBuildInfo phase2 parent)) -> (parent phase1 -> m (parent phase2))
 
-emptyPackageBuildInfo :: PackageBuildInfo a
+emptyPackageBuildInfo :: PackageBuildInfo Unresolved parent
 emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty mempty mempty
 
-decodePackageBuildInfo :: DecodeTOML a => Map Text Value -> Decoder (PackageBuildInfo a)
+decodePackageBuildInfo :: DecodeTOML (parent Unresolved) => Map Text Value -> Decoder (PackageBuildInfo Unresolved parent)
 decodePackageBuildInfo = applyDecoder tomlDecoder . Table
 
-mapPackageBuildInfo :: (a -> b) -> PackageBuildInfo a -> PackageBuildInfo b
+mapPackageBuildInfo :: (parent1 phase -> parent2 phase) -> PackageBuildInfo phase parent1 -> PackageBuildInfo phase parent2
 mapPackageBuildInfo f info =
   info
     { packageInfoIfs = map (fmap f) (packageInfoIfs info)

@@ -1,10 +1,15 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Tomcab.Resolve (
   resolvePackage,
@@ -30,6 +35,7 @@ import Tomcab.Cabal (
   ModulePattern,
   Package (..),
   PackageBuildInfo (..),
+  PackageExecutable (..),
   PackageLibrary (..),
   fromCommonStanza,
   getBuildInfo,
@@ -70,8 +76,41 @@ resolveOptionals Package{..} = do
       { packageName = packageName'
       , packageCabalVersion = fromMaybe "1.12" packageCabalVersion
       , packageBuildType = fromMaybe "Simple" packageBuildType
+      , packageCommonStanzas = transitionCommon <$> packageCommonStanzas
+      , packageLibraries = transitionLib <$> packageLibraries
+      , packageExecutables = transitionExe <$> packageExecutables
       , ..
       }
+  where
+    transitionCommon :: CommonStanza PreResolveOptionals -> CommonStanza PostResolveOptionals
+    transitionCommon CommonStanza{..} =
+      CommonStanza
+        { commonStanzaInfo = transitionInfo transitionCommon commonStanzaInfo
+        }
+
+    transitionLib :: PackageLibrary PreResolveOptionals -> PackageLibrary PostResolveOptionals
+    transitionLib PackageLibrary{..} =
+      PackageLibrary
+        { packageLibraryInfo = transitionInfo transitionLib packageLibraryInfo
+        , ..
+        }
+
+    transitionExe :: PackageExecutable PreResolveOptionals -> PackageExecutable PostResolveOptionals
+    transitionExe PackageExecutable{..} =
+      PackageExecutable
+        { packageExeInfo = transitionInfo transitionExe packageExeInfo
+        , ..
+        }
+
+    transitionInfo ::
+      (parent PreResolveOptionals -> parent PostResolveOptionals) ->
+      PackageBuildInfo PreResolveOptionals parent ->
+      PackageBuildInfo PostResolveOptionals parent
+    transitionInfo transitionParent PackageBuildInfo{..} =
+      PackageBuildInfo
+        { packageInfoIfs = fmap transitionParent <$> packageInfoIfs
+        , ..
+        }
 
 {----- ResolveAutoImports -----}
 
@@ -80,12 +119,44 @@ resolveAutoImports Package{..} =
   pure
     Package
       { packageAutoImport = []
-      , packageLibraries = map (modifyBuildInfo addAutoImports) packageLibraries
-      , packageExecutables = map (modifyBuildInfo addAutoImports) packageExecutables
+      , packageCommonStanzas = transitionCommon <$> packageCommonStanzas
+      , packageLibraries = transitionLib . modifyBuildInfo addAutoImports <$> packageLibraries
+      , packageExecutables = transitionExe . modifyBuildInfo addAutoImports <$> packageExecutables
       , ..
       }
   where
+    addAutoImports :: PackageBuildInfo PreResolveAutoImports parent -> PackageBuildInfo PreResolveAutoImports parent
     addAutoImports info = info{packageImport = packageAutoImport ++ packageImport info}
+
+    transitionCommon :: CommonStanza PreResolveAutoImports -> CommonStanza PostResolveAutoImports
+    transitionCommon CommonStanza{..} =
+      CommonStanza
+        { commonStanzaInfo = transitionInfo transitionCommon commonStanzaInfo
+        }
+
+    transitionLib :: PackageLibrary PreResolveAutoImports -> PackageLibrary PostResolveAutoImports
+    transitionLib PackageLibrary{..} =
+      PackageLibrary
+        { packageLibraryInfo = transitionInfo transitionLib packageLibraryInfo
+        , ..
+        }
+
+    transitionExe :: PackageExecutable PreResolveAutoImports -> PackageExecutable PostResolveAutoImports
+    transitionExe PackageExecutable{..} =
+      PackageExecutable
+        { packageExeInfo = transitionInfo transitionExe packageExeInfo
+        , ..
+        }
+
+    transitionInfo ::
+      (parent PreResolveAutoImports -> parent PostResolveAutoImports) ->
+      PackageBuildInfo PreResolveAutoImports parent ->
+      PackageBuildInfo PostResolveAutoImports parent
+    transitionInfo transitionParent PackageBuildInfo{..} =
+      PackageBuildInfo
+        { packageInfoIfs = fmap transitionParent <$> packageInfoIfs
+        , ..
+        }
 
 {----- ResolveImports -----}
 
@@ -101,15 +172,19 @@ resolveImports Package{..} = do
       , ..
       }
   where
-    resolveLib = modifyBuildInfoM (mergeImports packageCommonStanzas)
-    resolveExe = modifyBuildInfoM (mergeImports packageCommonStanzas)
+    resolveLib :: PackageLibrary PreResolveImports -> ResolveM (PackageLibrary PostResolveImports)
+    resolveLib = modifyBuildInfoM (mergeImports packageCommonStanzas resolveLib)
+
+    resolveExe :: PackageExecutable PreResolveImports -> ResolveM (PackageExecutable PostResolveImports)
+    resolveExe = modifyBuildInfoM (mergeImports packageCommonStanzas resolveExe)
 
 mergeImports ::
-  (HasPackageBuildInfo a, FromCommonStanza a) =>
-  CommonStanzas ->
-  PackageBuildInfo a ->
-  ResolveM (PackageBuildInfo a)
-mergeImports commonStanzas info0 = go (packageImport info0) info0
+  (HasPackageBuildInfo parent, FromCommonStanza parent) =>
+  CommonStanzas PreResolveImports ->
+  (parent PreResolveImports -> ResolveM (parent PostResolveImports)) ->
+  PackageBuildInfo PreResolveImports parent ->
+  ResolveM (PackageBuildInfo PostResolveImports parent)
+mergeImports commonStanzas resolveParent info0 = go (packageImport info0) info0
   where
     go (imp : imps) info =
       case imp `Map.lookup` commonStanzas of
@@ -118,13 +193,20 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
           go
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
             (mergeCommonStanza commonStanza info)
-    go [] info = pure info{packageImport = []}
+    go [] PackageBuildInfo{..} = do
+      packageInfoIfs' <- mapM (traverse resolveParent) packageInfoIfs
+      pure
+        PackageBuildInfo
+          { packageImport = []
+          , packageInfoIfs = packageInfoIfs'
+          , ..
+          }
 
 mergeCommonStanza ::
-  (HasPackageBuildInfo a, FromCommonStanza a) =>
-  CommonStanza ->
-  PackageBuildInfo a ->
-  PackageBuildInfo a
+  (HasPackageBuildInfo parent, FromCommonStanza parent) =>
+  CommonStanza PreResolveImports ->
+  PackageBuildInfo PreResolveImports parent ->
+  PackageBuildInfo PreResolveImports parent
 mergeCommonStanza (CommonStanza commonInfo) info =
   PackageBuildInfo
     { packageImport = packageImport commonInfo <> packageImport info
@@ -147,29 +229,57 @@ mergeCommonStanza (CommonStanza commonInfo) info =
 
 resolveModules :: Package PreResolveModules -> IO (Package PostResolveModules)
 resolveModules Package{..} = do
-  packageLibraries' <- mapM resolveLibraryModules packageLibraries
-  packageExecutables' <- mapM resolveComponentModules packageExecutables
+  packageLibraries' <- mapM resolveLib packageLibraries
+  packageExecutables' <- mapM resolveExe packageExecutables
   pure
     Package
-      { packageLibraries = packageLibraries'
+      { packageCommonStanzas = Map.empty
+      , packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
       , ..
       }
   where
-    setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
+    setOtherModules transitionParent modules =
+      modifyBuildInfo $ \info -> transitionInfo transitionParent info{packageOtherModules = modules}
 
-    resolveLibraryModules lib = do
+    resolveLib lib = do
       (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
-      pure $ setOtherModules other lib{packageExposedModules = exposed}
+      pure $ setOtherModules transitionLib other lib{packageExposedModules = exposed}
 
-    resolveComponentModules parent = do
+    resolveExe = resolveComponent transitionExe
+
+    resolveComponent transitionParent parent = do
       (_, other) <- resolveModulePatterns [] parent
-      pure $ setOtherModules other parent
+      pure $ setOtherModules transitionParent other parent
+
+    transitionLib :: PackageLibrary PreResolveModules -> PackageLibrary PostResolveModules
+    transitionLib PackageLibrary{..} =
+      PackageLibrary
+        { packageLibraryInfo = transitionInfo transitionLib packageLibraryInfo
+        , ..
+        }
+
+    transitionExe :: PackageExecutable PreResolveModules -> PackageExecutable PostResolveModules
+    transitionExe PackageExecutable{..} =
+      PackageExecutable
+        { packageExeInfo = transitionInfo transitionExe packageExeInfo
+        , ..
+        }
+
+    transitionInfo ::
+      (parent PreResolveModules -> parent PostResolveModules) ->
+      PackageBuildInfo PreResolveModules parent ->
+      PackageBuildInfo PostResolveModules parent
+    transitionInfo transitionParent PackageBuildInfo{..} =
+      PackageBuildInfo
+        { packageInfoIfs = fmap transitionParent <$> packageInfoIfs
+        , ..
+        }
 
 data ModuleVisibility = Exposed | Other
   deriving (Eq)
 
-resolveModulePatterns :: HasPackageBuildInfo a => [ModulePattern] -> a -> IO ([Module], [Module])
+resolveModulePatterns :: HasPackageBuildInfo parent => [ModulePattern] -> parent PreResolveModules -> IO ([Module], [Module])
 resolveModulePatterns exposedModules parent = do
   modules <- sort <$> concatMapM (listModules . Text.unpack) packageHsSourceDirs
 
