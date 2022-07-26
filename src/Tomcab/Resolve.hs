@@ -18,7 +18,6 @@ module Tomcab.Resolve (
 ) where
 
 import Control.Monad ((>=>))
-import Data.Functor.Identity (runIdentity)
 import Data.List (sort)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -108,11 +107,13 @@ resolveImports Package{..} = do
       , ..
       }
   where
-    resolveLib :: PackageLibrary PreResolveImports -> ResolveM (PackageLibrary PostResolveImports)
-    resolveLib = modifyBuildInfoM (mergeImports packageCommonStanzas resolveLib)
+    resolveLib PackageLibrary{..} = do
+      packageLibraryInfo' <- mergeImports packageCommonStanzas resolveLib packageLibraryInfo
+      pure PackageLibrary{packageLibraryInfo = packageLibraryInfo', ..}
 
-    resolveExe :: PackageExecutable PreResolveImports -> ResolveM (PackageExecutable PostResolveImports)
-    resolveExe = modifyBuildInfoM (mergeImports packageCommonStanzas resolveExe)
+    resolveExe PackageExecutable{..} = do
+      packageExeInfo' <- mergeImports packageCommonStanzas resolveExe packageExeInfo
+      pure PackageExecutable{packageExeInfo = packageExeInfo', ..}
 
 mergeImports ::
   (HasPackageBuildInfo parent, FromCommonStanza parent) =>
@@ -174,18 +175,17 @@ resolveModules Package{..} = do
       , ..
       }
   where
-    setOtherModules coerceParent modules =
-      modifyBuildInfo $ \info -> coerceInfoWith coerceParent info{packageOtherModules = modules}
+    setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
 
     resolveLib lib = do
       (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
-      pure $ setOtherModules coerceLib other lib{packageExposedModules = exposed}
+      pure . coerceLib $ setOtherModules other lib{packageExposedModules = exposed}
 
-    resolveExe = resolveComponent coerceExe
+    resolveExe = fmap coerceExe . resolveComponent
 
-    resolveComponent coerceParent parent = do
+    resolveComponent parent = do
       (_, other) <- resolveModulePatterns [] parent
-      pure $ setOtherModules coerceParent other parent
+      pure $ setOtherModules other parent
 
 data ModuleVisibility = Exposed | Other
   deriving (Eq)
@@ -280,16 +280,11 @@ class FromCommonStanza parent where
 class HasPackageBuildInfo parent where
   getBuildInfo :: parent phase -> PackageBuildInfo phase parent
 
-  modifyBuildInfo :: (PackageBuildInfo phase1 parent -> PackageBuildInfo phase2 parent) -> (parent phase1 -> parent phase2)
-  modifyBuildInfo f = runIdentity . modifyBuildInfoM (pure . f)
-
-  modifyBuildInfoM :: Monad m => (PackageBuildInfo phase1 parent -> m (PackageBuildInfo phase2 parent)) -> (parent phase1 -> m (parent phase2))
+  modifyBuildInfo :: (PackageBuildInfo phase parent -> PackageBuildInfo phase parent) -> (parent phase -> parent phase)
 
 instance HasPackageBuildInfo PackageLibrary where
   getBuildInfo = packageLibraryInfo
-  modifyBuildInfoM f lib = do
-    info <- f (packageLibraryInfo lib)
-    pure lib{packageLibraryInfo = info}
+  modifyBuildInfo f lib = lib{packageLibraryInfo = f (packageLibraryInfo lib)}
 
 instance FromCommonStanza PackageLibrary where
   fromCommonStanza (CommonStanza info) =
@@ -300,9 +295,7 @@ instance FromCommonStanza PackageLibrary where
 
 instance HasPackageBuildInfo PackageExecutable where
   getBuildInfo = packageExeInfo
-  modifyBuildInfoM f exe = do
-    info <- f (packageExeInfo exe)
-    pure exe{packageExeInfo = info}
+  modifyBuildInfo f exe = exe{packageExeInfo = f (packageExeInfo exe)}
 
 instance FromCommonStanza PackageExecutable where
   fromCommonStanza (CommonStanza info) =
