@@ -23,6 +23,7 @@ import UnliftIO.Exception (Exception (..), throwIO)
 import Tomcab.Cabal (
   CommonStanza (..),
   CommonStanzas,
+  Conditional (..),
   FromCommonStanza,
   HasPackageBuildInfo,
   Module,
@@ -30,8 +31,8 @@ import Tomcab.Cabal (
   Package (..),
   PackageBuildInfo (..),
   PackageLibrary (..),
+  fromCommonStanza,
   getBuildInfo,
-  mergeCommonStanza,
   modifyBuildInfo,
   modifyBuildInfoM,
   pattern Module,
@@ -115,6 +116,29 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
           go
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
             (mergeCommonStanza commonStanza info)
+
+mergeCommonStanza ::
+  (HasPackageBuildInfo a, FromCommonStanza a) =>
+  CommonStanza ->
+  PackageBuildInfo a ->
+  PackageBuildInfo a
+mergeCommonStanza (CommonStanza commonInfo) info =
+  PackageBuildInfo
+    { packageImport = packageImport commonInfo <> packageImport info
+    , packageBuildDepends = packageBuildDepends commonInfo <> packageBuildDepends info
+    , packageOtherModules = packageOtherModules commonInfo <> packageOtherModules info
+    , packageHsSourceDirs = packageHsSourceDirs commonInfo <> packageHsSourceDirs info
+    , packageInfoIfs = map upcastConditional (packageInfoIfs commonInfo) <> packageInfoIfs info
+    , -- union is left-biased; info fields should override commonInfo fields
+      packageInfoFields = packageInfoFields info `Map.union` packageInfoFields commonInfo
+    }
+  where
+    upcastConditional cond =
+      cond
+        { conditionThen = fromCommonStanza (conditionThen cond)
+        , conditionElif = map (fmap fromCommonStanza) (conditionElif cond)
+        , conditionElse = fmap fromCommonStanza (conditionElse cond)
+        }
 
 {----- ResolveModules -----}
 

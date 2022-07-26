@@ -19,7 +19,6 @@ module Tomcab.Cabal (
   CommonStanzas,
   CommonStanza (..),
   FromCommonStanza (..),
-  mergeCommonStanza,
 
   -- * Shared build information
   PackageBuildInfo (..),
@@ -218,29 +217,6 @@ newtype CommonStanza = CommonStanza
 
 class FromCommonStanza a where
   fromCommonStanza :: CommonStanza -> a
-
-mergeCommonStanza ::
-  (HasPackageBuildInfo a, FromCommonStanza a) =>
-  CommonStanza ->
-  PackageBuildInfo a ->
-  PackageBuildInfo a
-mergeCommonStanza (CommonStanza commonInfo) info =
-  PackageBuildInfo
-    { packageImport = packageImport commonInfo <> packageImport info
-    , packageBuildDepends = packageBuildDepends commonInfo <> packageBuildDepends info
-    , packageOtherModules = packageOtherModules commonInfo <> packageOtherModules info
-    , packageHsSourceDirs = packageHsSourceDirs commonInfo <> packageHsSourceDirs info
-    , packageInfoIfs = map upcastConditional (packageInfoIfs commonInfo) <> packageInfoIfs info
-    , -- union is left-biased; info fields should override commonInfo fields
-      packageInfoFields = packageInfoFields info `Map.union` packageInfoFields commonInfo
-    }
-  where
-    upcastConditional cond =
-      cond
-        { conditionThen = fromCommonStanza (conditionThen cond)
-        , conditionElif = map (fmap fromCommonStanza) (conditionElif cond)
-        , conditionElse = fmap fromCommonStanza (conditionElse cond)
-        }
 
 {----- Shared build information -----}
 
