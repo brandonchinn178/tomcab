@@ -20,11 +20,9 @@ module Tomcab.Cabal (
   -- * Common stanzas
   CommonStanzas,
   CommonStanza (..),
-  FromCommonStanza (..),
 
   -- * Shared build information
   PackageBuildInfo (..),
-  HasPackageBuildInfo (..),
 
   -- * CabalFields + CabalValue
   CabalFields,
@@ -37,7 +35,6 @@ module Tomcab.Cabal (
 ) where
 
 import Control.Applicative ((<|>))
-import Data.Functor.Identity (runIdentity)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
@@ -126,19 +123,6 @@ instance DecodeTOML (PackageLibrary Unresolved) where
 
     pure library{packageLibraryInfo = info}
 
-instance HasPackageBuildInfo PackageLibrary where
-  getBuildInfo = packageLibraryInfo
-  modifyBuildInfoM f lib = do
-    info <- f (packageLibraryInfo lib)
-    pure lib{packageLibraryInfo = info}
-
-instance FromCommonStanza PackageLibrary where
-  fromCommonStanza (CommonStanza info) =
-    PackageLibrary
-      mempty
-      mempty
-      (mapPackageBuildInfo fromCommonStanza info)
-
 data PackageExecutable (phase :: ResolutionPhase) = PackageExecutable
   { packageExeName :: Maybe Text
   , packageExeInfo :: PackageBuildInfo phase PackageExecutable
@@ -155,18 +139,6 @@ instance DecodeTOML (PackageExecutable Unresolved) where
     info <- decodePackageBuildInfo remainingFields
 
     pure exe{packageExeInfo = info}
-
-instance HasPackageBuildInfo PackageExecutable where
-  getBuildInfo = packageExeInfo
-  modifyBuildInfoM f exe = do
-    info <- f (packageExeInfo exe)
-    pure exe{packageExeInfo = info}
-
-instance FromCommonStanza PackageExecutable where
-  fromCommonStanza (CommonStanza info) =
-    PackageExecutable
-      mempty
-      (mapPackageBuildInfo fromCommonStanza info)
 
 -- TODO
 data PackageTest = PackageTest Value
@@ -213,9 +185,6 @@ newtype CommonStanza (phase :: ResolutionPhase) = CommonStanza
 
 deriving newtype instance DecodeTOML (CommonStanza Unresolved)
 
-class FromCommonStanza parent where
-  fromCommonStanza :: CommonStanza phase -> parent phase
-
 {----- Shared build information -----}
 
 data PackageBuildInfo (phase :: ResolutionPhase) parent = PackageBuildInfo
@@ -245,25 +214,11 @@ instance DecodeTOML (parent Unresolved) => DecodeTOML (PackageBuildInfo Unresolv
     where
       buildDependsFromTable = map (\(k, v) -> k <> " " <> v) . Map.toList
 
-class HasPackageBuildInfo parent where
-  getBuildInfo :: parent phase -> PackageBuildInfo phase parent
-
-  modifyBuildInfo :: (PackageBuildInfo phase1 parent -> PackageBuildInfo phase2 parent) -> (parent phase1 -> parent phase2)
-  modifyBuildInfo f = runIdentity . modifyBuildInfoM (pure . f)
-
-  modifyBuildInfoM :: Monad m => (PackageBuildInfo phase1 parent -> m (PackageBuildInfo phase2 parent)) -> (parent phase1 -> m (parent phase2))
-
 emptyPackageBuildInfo :: PackageBuildInfo Unresolved parent
 emptyPackageBuildInfo = PackageBuildInfo mempty mempty mempty mempty mempty mempty
 
 decodePackageBuildInfo :: DecodeTOML (parent Unresolved) => Map Text Value -> Decoder (PackageBuildInfo Unresolved parent)
 decodePackageBuildInfo = applyDecoder tomlDecoder . Table
-
-mapPackageBuildInfo :: (parent1 phase -> parent2 phase) -> PackageBuildInfo phase parent1 -> PackageBuildInfo phase parent2
-mapPackageBuildInfo f info =
-  info
-    { packageInfoIfs = map (fmap f) (packageInfoIfs info)
-    }
 
 {----- CabalFields + CabalValue -----}
 

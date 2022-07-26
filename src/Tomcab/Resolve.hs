@@ -17,6 +17,7 @@ module Tomcab.Resolve (
 ) where
 
 import Control.Monad ((>=>))
+import Data.Functor.Identity (runIdentity)
 import Data.List (sort)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -29,18 +30,12 @@ import Tomcab.Cabal (
   CommonStanza (..),
   CommonStanzas,
   Conditional (..),
-  FromCommonStanza,
-  HasPackageBuildInfo,
   Module,
   ModulePattern,
   Package (..),
   PackageBuildInfo (..),
   PackageExecutable (..),
   PackageLibrary (..),
-  fromCommonStanza,
-  getBuildInfo,
-  modifyBuildInfo,
-  modifyBuildInfoM,
   pattern Module,
  )
 import Tomcab.Cabal.Module (lookupPatternMatch)
@@ -313,3 +308,47 @@ instance Exception ResolutionError where
   displayException = \case
     MissingPackageName -> "Package name is not specified"
     UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
+
+{----- Helper type classes -----}
+
+class FromCommonStanza parent where
+  fromCommonStanza :: CommonStanza phase -> parent phase
+
+class HasPackageBuildInfo parent where
+  getBuildInfo :: parent phase -> PackageBuildInfo phase parent
+
+  modifyBuildInfo :: (PackageBuildInfo phase1 parent -> PackageBuildInfo phase2 parent) -> (parent phase1 -> parent phase2)
+  modifyBuildInfo f = runIdentity . modifyBuildInfoM (pure . f)
+
+  modifyBuildInfoM :: Monad m => (PackageBuildInfo phase1 parent -> m (PackageBuildInfo phase2 parent)) -> (parent phase1 -> m (parent phase2))
+
+instance HasPackageBuildInfo PackageLibrary where
+  getBuildInfo = packageLibraryInfo
+  modifyBuildInfoM f lib = do
+    info <- f (packageLibraryInfo lib)
+    pure lib{packageLibraryInfo = info}
+
+instance FromCommonStanza PackageLibrary where
+  fromCommonStanza (CommonStanza info) =
+    PackageLibrary
+      mempty
+      mempty
+      (mapPackageBuildInfo fromCommonStanza info)
+
+instance HasPackageBuildInfo PackageExecutable where
+  getBuildInfo = packageExeInfo
+  modifyBuildInfoM f exe = do
+    info <- f (packageExeInfo exe)
+    pure exe{packageExeInfo = info}
+
+instance FromCommonStanza PackageExecutable where
+  fromCommonStanza (CommonStanza info) =
+    PackageExecutable
+      mempty
+      (mapPackageBuildInfo fromCommonStanza info)
+
+mapPackageBuildInfo :: (parent1 phase -> parent2 phase) -> PackageBuildInfo phase parent1 -> PackageBuildInfo phase parent2
+mapPackageBuildInfo f info =
+  info
+    { packageInfoIfs = map (fmap f) (packageInfoIfs info)
+    }
