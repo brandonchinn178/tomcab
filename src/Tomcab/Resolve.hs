@@ -2,6 +2,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -116,7 +117,7 @@ resolveImports Package{..} = do
       pure PackageExecutable{packageExeInfo = packageExeInfo', ..}
 
 mergeImports ::
-  FromCommonStanza parent =>
+  FromCommonStanza PreResolveImports parent =>
   CommonStanzas PreResolveImports ->
   (parent PreResolveImports -> ResolveM (parent PostResolveImports)) ->
   PackageBuildInfo PreResolveImports parent ->
@@ -140,7 +141,7 @@ mergeImports commonStanzas resolveParent info0 = go (packageImport info0) info0
           }
 
 mergeCommonStanza ::
-  FromCommonStanza parent =>
+  FromCommonStanza PreResolveImports parent =>
   CommonStanza PreResolveImports ->
   PackageBuildInfo PreResolveImports parent ->
   PackageBuildInfo PreResolveImports parent
@@ -306,17 +307,17 @@ instance HasPackageBuildInfo PackageLibrary where
 instance HasPackageBuildInfo PackageExecutable where
   modifyBuildInfo f exe = exe{packageExeInfo = f (packageExeInfo exe)}
 
-class FromCommonStanza parent where
+class FromCommonStanza phase parent where
   fromCommonStanza :: CommonStanza phase -> parent phase
 
-instance FromCommonStanza PackageLibrary where
+instance FromCommonStanza phase PackageLibrary where
   fromCommonStanza (CommonStanza info) =
     PackageLibrary
       mempty
       mempty
       (mapPackageBuildInfo fromCommonStanza info)
 
-instance FromCommonStanza PackageExecutable where
+instance FromCommonStanza phase PackageExecutable where
   fromCommonStanza (CommonStanza info) =
     PackageExecutable
       mempty
