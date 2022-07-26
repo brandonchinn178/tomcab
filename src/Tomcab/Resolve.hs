@@ -116,7 +116,7 @@ resolveImports Package{..} = do
       pure PackageExecutable{packageExeInfo = packageExeInfo', ..}
 
 mergeImports ::
-  (HasPackageBuildInfo parent, FromCommonStanza parent) =>
+  FromCommonStanza parent =>
   CommonStanzas PreResolveImports ->
   (parent PreResolveImports -> ResolveM (parent PostResolveImports)) ->
   PackageBuildInfo PreResolveImports parent ->
@@ -140,7 +140,7 @@ mergeImports commonStanzas resolveParent info0 = go (packageImport info0) info0
           }
 
 mergeCommonStanza ::
-  (HasPackageBuildInfo parent, FromCommonStanza parent) =>
+  FromCommonStanza parent =>
   CommonStanza PreResolveImports ->
   PackageBuildInfo PreResolveImports parent ->
   PackageBuildInfo PreResolveImports parent
@@ -151,8 +151,7 @@ mergeCommonStanza (CommonStanza commonInfo) info =
     , packageOtherModules = packageOtherModules commonInfo <> packageOtherModules info
     , packageHsSourceDirs = packageHsSourceDirs commonInfo <> packageHsSourceDirs info
     , packageInfoIfs = map upcastConditional (packageInfoIfs commonInfo) <> packageInfoIfs info
-    , -- union is left-biased; info fields should override commonInfo fields
-      packageInfoFields = packageInfoFields info `Map.union` packageInfoFields commonInfo
+    , packageInfoFields = packageInfoFields commonInfo `overrideWith` packageInfoFields info
     }
   where
     upcastConditional cond =
@@ -161,6 +160,10 @@ mergeCommonStanza (CommonStanza commonInfo) info =
         , conditionElif = map (fmap fromCommonStanza) (conditionElif cond)
         , conditionElse = fmap fromCommonStanza (conditionElse cond)
         }
+
+    -- "map1 `overrideWith` map2" will merge the two Maps, with duplicate keys
+    -- set to the value in "map2"
+    overrideWith = flip Map.union
 
 {----- ResolveModules -----}
 
@@ -274,9 +277,6 @@ coerceInfoWith coerceParent PackageBuildInfo{..} =
 
 {----- PackageBuildInfo + CommonStanza helpers -----}
 
-class FromCommonStanza parent where
-  fromCommonStanza :: CommonStanza phase -> parent phase
-
 class HasPackageBuildInfo parent where
   getBuildInfo :: parent phase -> PackageBuildInfo phase parent
 
@@ -286,16 +286,19 @@ instance HasPackageBuildInfo PackageLibrary where
   getBuildInfo = packageLibraryInfo
   modifyBuildInfo f lib = lib{packageLibraryInfo = f (packageLibraryInfo lib)}
 
+instance HasPackageBuildInfo PackageExecutable where
+  getBuildInfo = packageExeInfo
+  modifyBuildInfo f exe = exe{packageExeInfo = f (packageExeInfo exe)}
+
+class FromCommonStanza parent where
+  fromCommonStanza :: CommonStanza phase -> parent phase
+
 instance FromCommonStanza PackageLibrary where
   fromCommonStanza (CommonStanza info) =
     PackageLibrary
       mempty
       mempty
       (mapPackageBuildInfo fromCommonStanza info)
-
-instance HasPackageBuildInfo PackageExecutable where
-  getBuildInfo = packageExeInfo
-  modifyBuildInfo f exe = exe{packageExeInfo = f (packageExeInfo exe)}
 
 instance FromCommonStanza PackageExecutable where
   fromCommonStanza (CommonStanza info) =
