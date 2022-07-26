@@ -26,6 +26,7 @@ import System.FilePath (makeRelative, splitExtensions)
 import UnliftIO.Exception (Exception (..), fromEither, throwIO)
 
 import Tomcab.Cabal (
+  CabalValue (..),
   CommonStanza (..),
   CommonStanzas,
   Conditional (..),
@@ -150,7 +151,7 @@ mergeCommonStanza (CommonStanza commonInfo) info =
     , packageOtherModules = packageOtherModules commonInfo <> packageOtherModules info
     , packageHsSourceDirs = packageHsSourceDirs commonInfo <> packageHsSourceDirs info
     , packageInfoIfs = map upcastConditional (packageInfoIfs commonInfo) <> packageInfoIfs info
-    , packageInfoFields = packageInfoFields commonInfo `overrideWith` packageInfoFields info
+    , packageInfoFields = Map.unionWith mergeField (packageInfoFields commonInfo) (packageInfoFields info)
     }
   where
     upcastConditional cond =
@@ -160,9 +161,10 @@ mergeCommonStanza (CommonStanza commonInfo) info =
         , conditionElse = fmap fromCommonStanza (conditionElse cond)
         }
 
-    -- "map1 `overrideWith` map2" will merge the two Maps, with duplicate keys
-    -- set to the value in "map2"
-    overrideWith = flip Map.union
+    mergeField commonField infoField =
+      case (commonField, infoField) of
+        (CabalListValue as, CabalListValue bs) -> CabalListValue (as <> bs)
+        _ -> infoField
 
 {----- ResolveModules -----}
 
