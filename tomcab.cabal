@@ -13,6 +13,7 @@ library
     , Tomcab.Cabal.Module
     , Tomcab.Render
     , Tomcab.Resolve
+    , Tomcab.Resolve.Phases
     , Tomcab.Utils.FilePath
   hs-source-dirs:
       src

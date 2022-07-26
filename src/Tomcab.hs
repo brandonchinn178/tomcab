@@ -19,11 +19,12 @@ import System.Directory (getCurrentDirectory)
 import System.Exit (exitFailure)
 import System.FilePath (takeDirectory, takeFileName, (</>))
 import TOML (TOMLError, decode, renderTOMLError)
-import UnliftIO.Exception (Exception (..), fromEither, handleAny, throwIO)
+import UnliftIO.Exception (Exception (..), fromEither, handleAny)
 
 import Tomcab.Cabal
 import Tomcab.Render
 import Tomcab.Resolve
+import Tomcab.Resolve.Phases
 import Tomcab.Utils.FilePath
 
 runTomcab :: Maybe [FilePath] -> IO ()
@@ -34,10 +35,7 @@ runTomcab = \case
     go = mapM_ $ \file ->
       handleAny (onError file) $ do
         pkg <- loadPackage file
-        cabalPath <-
-          case packageName pkg of
-            Nothing -> throwIO MissingPackageName
-            Just name -> pure $ takeDirectory file </> (Text.unpack name ++ ".cabal")
+        let cabalPath = takeDirectory file </> (Text.unpack (packageName pkg) ++ ".cabal")
         Text.writeFile cabalPath (renderPackage pkg)
 
     onError file e = do
@@ -52,14 +50,14 @@ findCabalFiles = do
   cwd <- getCurrentDirectory
   filter ((== "package.toml") . takeFileName) <$> listDirectoryRecursive cwd
 
-loadPackage :: FilePath -> IO Package
+loadPackage :: FilePath -> IO (Package Resolved)
 loadPackage fp = do
   pkg <- parsePackage =<< Text.readFile fp
   -- TODO: loadPackage all files mentioned in `extends`
   resolvePackage pkg
 
 -- TODO: Remove ParseError: https://github.com/brandonchinn178/toml-reader/issues/13
-parsePackage :: Text -> IO Package
+parsePackage :: Text -> IO (Package Unresolved)
 parsePackage = fromEither . first ParseError . decode
 
 {----- Errors -----}

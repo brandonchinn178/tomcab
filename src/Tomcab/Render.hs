@@ -22,8 +22,9 @@ import Tomcab.Cabal (
   PackageLibrary (..),
   pattern Module,
  )
+import Tomcab.Resolve.Phases (Resolved)
 
-renderPackage :: Package -> Text
+renderPackage :: Package Resolved -> Text
 renderPackage Package{..} =
   stripTrailingSpaces . joinLines $
     [ field "cabal-version" packageCabalVersion

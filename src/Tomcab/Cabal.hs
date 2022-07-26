@@ -1,5 +1,8 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -54,16 +57,19 @@ import TOML (
  )
 
 import Tomcab.Cabal.Module
+import Tomcab.Resolve.Phases (
+  MaybeWhenParsed,
+  ResolutionPhase (..),
+  Unresolved,
+ )
 
--- invariant: after resolveDefaults, packageCabalVersion is Just
--- invariant: after resolveDefaults, packageBuildType is Just
 -- invariant: after resolveAutoImports, packageAutoImport is empty
 -- invariant: after resolveImports, packageCommonStanzas is empty
-data Package = Package
-  { packageName :: Maybe Text
+data Package (phase :: ResolutionPhase) = Package
+  { packageName :: MaybeWhenParsed phase Text
   , packageVersion :: Maybe Text
-  , packageCabalVersion :: Maybe Text
-  , packageBuildType :: Maybe Text
+  , packageCabalVersion :: MaybeWhenParsed phase Text
+  , packageBuildType :: MaybeWhenParsed phase Text
   , packageCommonStanzas :: CommonStanzas
   , packageLibraries :: [PackageLibrary]
   , packageExecutables :: [PackageExecutable]
@@ -71,9 +77,8 @@ data Package = Package
   , packageAutoImport :: [Text]
   , packageFields :: CabalFields
   }
-  deriving (Show)
 
-instance DecodeTOML Package where
+instance DecodeTOML (Package Unresolved) where
   tomlDecoder = do
     unused <-
       getAllExcept

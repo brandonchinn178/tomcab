@@ -1,7 +1,9 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
 module Tomcab.Resolve (
@@ -35,51 +37,67 @@ import Tomcab.Cabal (
   pattern Module,
  )
 import Tomcab.Cabal.Module (lookupPatternMatch)
+import Tomcab.Resolve.Phases
 import Tomcab.Utils.FilePath (listDirectoryRecursive)
 
--- TODO: add "phase" of resolution in phantom type? a la Trees That Grow
-resolvePackage :: Package -> IO Package
+resolvePackage :: Package Unresolved -> IO (Package Resolved)
 resolvePackage =
   resolveOptionals
     >=> resolveAutoImports
     >=> resolveImports
     >=> resolveModules
 
-{----- Parsed => ResolvedOptionals -----}
+type PreResolveOptionals = 'Parsed
+type PostResolveOptionals = 'ResolvedOptionals
 
-resolveOptionals :: Package -> IO Package
-resolveOptionals pkg = do
-  let defaultTo f x = Just $ fromMaybe x (f pkg)
+type PreResolveAutoImports = 'ResolvedOptionals
+type PostResolveAutoImports = 'NoAutoImports
+
+type PreResolveImports = 'NoAutoImports
+type PostResolveImports = 'NoImports
+
+type PreResolveModules = 'NoImports
+type PostResolveModules = 'NoModulePatterns
+
+{----- ResolveOptionals -----}
+
+resolveOptionals :: Package PreResolveOptionals -> IO (Package PostResolveOptionals)
+resolveOptionals Package{..} = do
+  packageName' <- maybe (throwIO MissingPackageName) pure packageName
   pure
-    pkg
-      { packageCabalVersion = packageCabalVersion `defaultTo` "1.12"
-      , packageBuildType = packageBuildType `defaultTo` "Simple"
+    Package
+      { packageName = packageName'
+      , packageCabalVersion = fromMaybe "1.12" packageCabalVersion
+      , packageBuildType = fromMaybe "Simple" packageBuildType
+      , ..
       }
 
-{----- ResolvedOptionals => NoAutoImports -----}
+{----- ResolveAutoImports -----}
 
-resolveAutoImports :: Package -> IO Package
-resolveAutoImports pkg = do
-  let addAutoImports info = info{packageImport = packageAutoImport pkg ++ packageImport info}
+resolveAutoImports :: Package PreResolveAutoImports -> IO (Package PostResolveAutoImports)
+resolveAutoImports Package{..} = do
+  let addAutoImports info = info{packageImport = packageAutoImport ++ packageImport info}
   pure
-    pkg
+    Package
       { packageAutoImport = []
-      , packageLibraries = map (modifyBuildInfo addAutoImports) (packageLibraries pkg)
-      , packageExecutables = map (modifyBuildInfo addAutoImports) (packageExecutables pkg)
+      , packageLibraries = map (modifyBuildInfo addAutoImports) packageLibraries
+      , packageExecutables = map (modifyBuildInfo addAutoImports) packageExecutables
+      , ..
       }
 
-{----- NoAutoImports => NoImports -----}
+{----- ResolveImports -----}
 
-resolveImports :: Package -> IO Package
-resolveImports pkg = do
-  let commonStanzas = packageCommonStanzas pkg
-  packageLibraries' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageLibraries pkg)
-  packageExecutables' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) (packageExecutables pkg)
+resolveImports :: Package PreResolveImports -> IO (Package PostResolveImports)
+resolveImports Package{..} = do
+  let commonStanzas = packageCommonStanzas
+  packageLibraries' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) packageLibraries
+  packageExecutables' <- mapM (modifyBuildInfoM (mergeImports commonStanzas)) packageExecutables
   pure
-    pkg
+    Package
       { packageCommonStanzas = Map.empty
       , packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
+      , ..
       }
 
 mergeImports ::
@@ -98,10 +116,10 @@ mergeImports commonStanzas info0 = go (packageImport info0) info0
             (packageImport (commonStanzaInfo commonStanza) ++ imps)
             (mergeCommonStanza commonStanza info)
 
-{----- NoImports => NoModulePatterns -----}
+{----- ResolveModules -----}
 
-resolveModules :: Package -> IO Package
-resolveModules pkg = do
+resolveModules :: Package PreResolveModules -> IO (Package PostResolveModules)
+resolveModules Package{..} = do
   let setOtherModules modules = modifyBuildInfo $ \info -> info{packageOtherModules = modules}
       resolveLibraryModules lib = do
         (exposed, other) <- resolveModulePatterns (packageExposedModules lib) lib
@@ -110,12 +128,13 @@ resolveModules pkg = do
         (_, other) <- resolveModulePatterns [] parent
         pure $ setOtherModules other parent
 
-  packageLibraries' <- mapM resolveLibraryModules (packageLibraries pkg)
-  packageExecutables' <- mapM resolveComponentModules (packageExecutables pkg)
+  packageLibraries' <- mapM resolveLibraryModules packageLibraries
+  packageExecutables' <- mapM resolveComponentModules packageExecutables
   pure
-    pkg
+    Package
       { packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
+      , ..
       }
 
 data ModuleVisibility = Exposed | Other
