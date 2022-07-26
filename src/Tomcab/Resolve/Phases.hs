@@ -14,8 +14,8 @@ module Tomcab.Resolve.Phases (
   Unresolved,
   Resolved,
 
-  -- * MaybeWhenParsed
-  MaybeWhenParsed,
+  -- * NonNullAfterParsed
+  NonNullAfterParsed,
 
   -- * UnsetFrom
   UnsetFrom,
@@ -37,15 +37,15 @@ type Unresolved = 'Parsed
 -- | The final resolution phase.
 type Resolved = 'NoModulePatterns
 
-{----- MaybeWhenParsed -----}
+{----- NonNullAfterParsed -----}
 
 {- |
-A helper for fields that are decoded as 'Maybe' but are resolved (e.g. with `fromMaybe`)
-in the first phase of resolution (i.e. from `ResolvedOptionals` on).
+A helper for fields that are parsed as 'Maybe' but are immediately resolved
+(e.g. with `fromMaybe`) in the first phase of resolution.
 -}
-type family MaybeWhenParsed (phase :: ResolutionPhase) a where
-  MaybeWhenParsed 'Parsed a = Maybe a
-  MaybeWhenParsed _ a = a
+type family NonNullAfterParsed (phase :: ResolutionPhase) a where
+  NonNullAfterParsed 'Parsed a = Maybe a
+  NonNullAfterParsed _ a = a
 
 {----- UnsetFrom -----}
 

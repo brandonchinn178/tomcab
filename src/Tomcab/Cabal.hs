@@ -51,17 +51,17 @@ import TOML (
 
 import Tomcab.Cabal.Module
 import Tomcab.Resolve.Phases (
-  MaybeWhenParsed,
+  NonNullAfterParsed,
   ResolutionPhase (..),
   Unresolved,
   UnsetFrom,
  )
 
 data Package (phase :: ResolutionPhase) = Package
-  { packageName :: MaybeWhenParsed phase Text
+  { packageName :: NonNullAfterParsed phase Text
   , packageVersion :: Maybe Text
-  , packageCabalVersion :: MaybeWhenParsed phase Text
-  , packageBuildType :: MaybeWhenParsed phase Text
+  , packageCabalVersion :: NonNullAfterParsed phase Text
+  , packageBuildType :: NonNullAfterParsed phase Text
   , packageCommonStanzas :: UnsetFrom 'NoImports phase (CommonStanzas phase)
   , packageLibraries :: [PackageLibrary phase]
   , packageExecutables :: [PackageExecutable phase]
