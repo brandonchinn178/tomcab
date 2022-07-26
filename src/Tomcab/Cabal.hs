@@ -60,20 +60,19 @@ import Tomcab.Resolve.Phases (
   MaybeWhenParsed,
   ResolutionPhase (..),
   Unresolved,
+  UnsetFrom,
  )
 
--- invariant: after resolveAutoImports, packageAutoImport is empty
--- invariant: after resolveImports, packageCommonStanzas is empty
 data Package (phase :: ResolutionPhase) = Package
   { packageName :: MaybeWhenParsed phase Text
   , packageVersion :: Maybe Text
   , packageCabalVersion :: MaybeWhenParsed phase Text
   , packageBuildType :: MaybeWhenParsed phase Text
-  , packageCommonStanzas :: CommonStanzas phase
+  , packageCommonStanzas :: UnsetFrom 'NoImports phase (CommonStanzas phase)
   , packageLibraries :: [PackageLibrary phase]
   , packageExecutables :: [PackageExecutable phase]
   , packageTests :: [PackageTest]
-  , packageAutoImport :: [Text]
+  , packageAutoImport :: UnsetFrom 'NoAutoImports phase [Text]
   , packageFields :: CabalFields
   }
 
@@ -220,7 +219,7 @@ class FromCommonStanza parent where
 {----- Shared build information -----}
 
 data PackageBuildInfo (phase :: ResolutionPhase) parent = PackageBuildInfo
-  { packageImport :: [Text]
+  { packageImport :: UnsetFrom 'NoImports phase [Text]
   , packageBuildDepends :: [Text]
   , packageOtherModules :: [ModulePattern]
   , packageHsSourceDirs :: [Text]

@@ -118,7 +118,7 @@ resolveAutoImports :: Package PreResolveAutoImports -> IO (Package PostResolveAu
 resolveAutoImports Package{..} =
   pure
     Package
-      { packageAutoImport = []
+      { packageAutoImport = unset
       , packageCommonStanzas = transitionCommon <$> packageCommonStanzas
       , packageLibraries = transitionLib . modifyBuildInfo addAutoImports <$> packageLibraries
       , packageExecutables = transitionExe . modifyBuildInfo addAutoImports <$> packageExecutables
@@ -166,7 +166,7 @@ resolveImports Package{..} = do
   packageExecutables' <- fromEither $ mapM resolveExe packageExecutables
   pure
     Package
-      { packageCommonStanzas = Map.empty
+      { packageCommonStanzas = unset
       , packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
       , ..
@@ -197,7 +197,7 @@ mergeImports commonStanzas resolveParent info0 = go (packageImport info0) info0
       packageInfoIfs' <- mapM (traverse resolveParent) packageInfoIfs
       pure
         PackageBuildInfo
-          { packageImport = []
+          { packageImport = unset
           , packageInfoIfs = packageInfoIfs'
           , ..
           }
@@ -233,8 +233,7 @@ resolveModules Package{..} = do
   packageExecutables' <- mapM resolveExe packageExecutables
   pure
     Package
-      { packageCommonStanzas = Map.empty
-      , packageLibraries = packageLibraries'
+      { packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
       , ..
       }
