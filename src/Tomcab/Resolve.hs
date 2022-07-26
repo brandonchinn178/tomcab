@@ -38,6 +38,7 @@ import Tomcab.Cabal (
   PackageBuildInfo (..),
   PackageExecutable (..),
   PackageLibrary (..),
+  PackageTestSuite (..),
  )
 import Tomcab.Cabal.Module (lookupPatternMatch)
 import Tomcab.Resolve.Phases
@@ -75,8 +76,16 @@ resolveOptionals Package{..} = do
       , packageCommonStanzas = fmap coerceCommonStanza packageCommonStanzas
       , packageLibraries = map coerceLib packageLibraries
       , packageExecutables = map coerceExe packageExecutables
+      , packageTestSuites = map resolveTestName packageTestSuites
       , ..
       }
+  where
+    resolveTestName PackageTestSuite{..} =
+      PackageTestSuite
+        { packageTestType = fromMaybe "exitcode-stdio-1.0" packageTestType
+        , packageTestInfo = coerceInfoWith resolveTestName packageTestInfo
+        , ..
+        }
 
 {----- ResolveAutoImports -----}
 
@@ -88,6 +97,7 @@ resolveAutoImports Package{..} =
       , packageCommonStanzas = fmap coerceCommonStanza packageCommonStanzas
       , packageLibraries = map (coerceLib . modifyBuildInfo addAutoImports) packageLibraries
       , packageExecutables = map (coerceExe . modifyBuildInfo addAutoImports) packageExecutables
+      , packageTestSuites = map (coerceTest . modifyBuildInfo addAutoImports) packageTestSuites
       , ..
       }
   where
@@ -100,11 +110,13 @@ resolveImports :: Package PreResolveImports -> IO (Package PostResolveImports)
 resolveImports Package{..} = do
   packageLibraries' <- fromEither $ mapM resolve packageLibraries
   packageExecutables' <- fromEither $ mapM resolve packageExecutables
+  packageTestSuites' <- fromEither $ mapM resolve packageTestSuites
   pure
     Package
       { packageCommonStanzas = unset
       , packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
+      , packageTestSuites = packageTestSuites'
       , ..
       }
   where
@@ -128,6 +140,8 @@ instance CanResolveImports PackageLibrary where
   setResolvedImports info PackageLibrary{..} = PackageLibrary{packageLibraryInfo = info, ..}
 instance CanResolveImports PackageExecutable where
   setResolvedImports info PackageExecutable{..} = PackageExecutable{packageExeInfo = info, ..}
+instance CanResolveImports PackageTestSuite where
+  setResolvedImports info PackageTestSuite{..} = PackageTestSuite{packageTestInfo = info, ..}
 
 mergeImports ::
   FromCommonStanza PreResolveImports parent =>
@@ -186,10 +200,12 @@ resolveModules :: Package PreResolveModules -> IO (Package PostResolveModules)
 resolveModules Package{..} = do
   packageLibraries' <- mapM resolve packageLibraries
   packageExecutables' <- mapM resolve packageExecutables
+  packageTestSuites' <- mapM resolve packageTestSuites
   pure
     Package
       { packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
+      , packageTestSuites = packageTestSuites'
       , ..
       }
   where
@@ -233,6 +249,8 @@ instance CanResolveModules PackageLibrary where
       }
 instance CanResolveModules PackageExecutable where
   setResolvedModules _ info PackageExecutable{..} = PackageExecutable{packageExeInfo = info, ..}
+instance CanResolveModules PackageTestSuite where
+  setResolvedModules _ info PackageTestSuite{..} = PackageTestSuite{packageTestInfo = info, ..}
 
 data ModuleVisibility = Exposed | Other
   deriving (Eq)
@@ -295,6 +313,21 @@ coerceExe PackageExecutable{..} =
     , ..
     }
 
+type CoerciblePackageTestSuite phase1 phase2 =
+  ( CoerciblePackageBuildInfo phase1 phase2
+  , NonNullAfterParsed phase1 Text ~ NonNullAfterParsed phase2 Text
+  )
+
+coerceTest ::
+  CoerciblePackageTestSuite phase1 phase2 =>
+  PackageTestSuite phase1 ->
+  PackageTestSuite phase2
+coerceTest PackageTestSuite{..} =
+  PackageTestSuite
+    { packageTestInfo = coerceInfoWith coerceTest packageTestInfo
+    , ..
+    }
+
 coerceCommonStanza ::
   CoerciblePackageBuildInfo phase1 phase2 =>
   CommonStanza phase1 ->
@@ -334,6 +367,10 @@ instance HasPackageBuildInfo PackageExecutable where
   getBuildInfo = packageExeInfo
   modifyBuildInfo f exe = exe{packageExeInfo = f (packageExeInfo exe)}
 
+instance HasPackageBuildInfo PackageTestSuite where
+  getBuildInfo = packageTestInfo
+  modifyBuildInfo f test = test{packageTestInfo = f (packageTestInfo test)}
+
 class FromCommonStanza phase parent where
   fromCommonStanza :: CommonStanza phase -> parent phase
 
@@ -347,6 +384,13 @@ instance FromCommonStanza phase PackageLibrary where
 instance FromCommonStanza phase PackageExecutable where
   fromCommonStanza (CommonStanza info) =
     PackageExecutable
+      mempty
+      (mapPackageBuildInfo fromCommonStanza info)
+
+instance FromCommonStanza PreResolveImports PackageTestSuite where
+  fromCommonStanza (CommonStanza info) =
+    PackageTestSuite
+      mempty
       mempty
       (mapPackageBuildInfo fromCommonStanza info)
 

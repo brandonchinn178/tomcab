@@ -13,7 +13,7 @@ module Tomcab.Cabal (
   Package (..),
   PackageLibrary (..),
   PackageExecutable (..),
-  PackageTest (..),
+  PackageTestSuite (..),
   Conditional (..),
 
   -- * Common stanzas
@@ -65,7 +65,7 @@ data Package (phase :: ResolutionPhase) = Package
   , packageCommonStanzas :: UnsetFrom 'NoImports phase (CommonStanzas phase)
   , packageLibraries :: [PackageLibrary phase]
   , packageExecutables :: [PackageExecutable phase]
-  , packageTests :: [PackageTest]
+  , packageTestSuites :: [PackageTestSuite phase]
   , packageAutoImport :: UnsetFrom 'NoAutoImports phase [Text]
   , packageFields :: CabalFields
   }
@@ -137,12 +137,24 @@ instance DecodeTOML (PackageExecutable Unresolved) where
 
     pure exe{packageExeInfo = info}
 
--- TODO
-data PackageTest = PackageTest Value
-  deriving (Show)
+data PackageTestSuite (phase :: ResolutionPhase) = PackageTestSuite
+  { packageTestName :: Maybe Text
+  , packageTestType :: NonNullAfterParsed phase Text
+  , packageTestInfo :: PackageBuildInfo phase PackageTestSuite
+  }
 
-instance DecodeTOML PackageTest where
-  tomlDecoder = PackageTest <$> tomlDecoder
+instance DecodeTOML (PackageTestSuite Unresolved) where
+  tomlDecoder = do
+    remainingFields <- getAllExcept ["name", "type"]
+    test <-
+      PackageTestSuite
+        <$> getFieldOpt "name"
+        <*> getFieldOpt "type"
+        <*> pure emptyPackageBuildInfo
+
+    info <- decodePackageBuildInfo remainingFields
+
+    pure test{packageTestInfo = info}
 
 data Conditional a = Conditional
   { condition :: Text

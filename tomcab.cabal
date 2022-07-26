@@ -83,3 +83,25 @@ executable cabal-tomcab
   if !os(windows)
     build-depends:
         unix < 3
+
+test-suite tomcab-tests
+  type: exitcode-stdio-1.0
+  other-modules:
+      Main
+  hs-source-dirs:
+      test
+  build-depends:
+      base
+    , tasty
+    , tasty-autocollect
+    , tomcab
+  build-tool-depends:
+      tasty-autocollect:tasty-autocollect
+  default-extensions:
+      ImportQualifiedPost
+  default-language: Haskell2010
+  ghc-options:
+      "-Wall"
+      "-F"
+      "-pgmF=tasty-autocollect"
+  main-is: Main.hs

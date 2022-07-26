@@ -21,6 +21,7 @@ import Tomcab.Cabal (
   PackageBuildInfo (..),
   PackageExecutable (..),
   PackageLibrary (..),
+  PackageTestSuite (..),
  )
 import Tomcab.Resolve.Phases (Resolved)
 
@@ -37,6 +38,8 @@ renderPackage Package{..} =
     , stanzas renderLibrary packageLibraries
     , "\n"
     , stanzas renderExecutable packageExecutables
+    , "\n"
+    , stanzas renderTestSuite packageTestSuites
     ]
   where
     stripTrailingSpaces = Text.unlines . map Text.stripEnd . Text.lines
@@ -64,6 +67,19 @@ renderExecutable exe =
     renderExecutableBody PackageExecutable{..} =
       joinLines
         [ renderBuildInfo renderExecutableBody packageExeInfo
+        ]
+
+renderTestSuite :: PackageTestSuite Resolved -> Text
+renderTestSuite test =
+  joinLines
+    [ "test-suite " <> fromMaybe "" (packageTestName test)
+    , indent $ renderTestBody test
+    ]
+  where
+    renderTestBody PackageTestSuite{..} =
+      joinLines
+        [ field "type" packageTestType
+        , renderBuildInfo renderTestBody packageTestInfo
         ]
 
 renderBuildInfo :: (parent Resolved -> Text) -> PackageBuildInfo Resolved parent -> Text

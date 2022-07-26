@@ -56,6 +56,8 @@ With some exceptions, all fields should be either a String or a list of String, 
         build-depends.text = ""
     ```
 
+* `test-suite` > `type`: will be set to `exitcode-stdio-1.0` unless explicitly specified
+
 * `if`: If-statements can be added to the top-level or any of the `library`/`executable`/`test-suite` sections. Since a section can have multiple if-statements, it's represented as a list.
 
     * For simple if-statements, you can just specify `condition` and the fields as normal:

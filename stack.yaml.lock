@@ -5,6 +5,13 @@
 
 packages:
 - completed:
+    hackage: tasty-autocollect-0.2.0.0@sha256:8942e88aa209b3ae71a949013b131b6f64eef159adcd0f3bad9fb5719fea4d5b,4435
+    pantry-tree:
+      size: 3470
+      sha256: fd319076f132f4095f8ef403675ccd823e21bd6ec460c764420039fea11339b8
+  original:
+    hackage: tasty-autocollect-0.2.0.0
+- completed:
     hackage: toml-reader-0.1.0.0@sha256:66e2b4261739559e6d1be50391af7038610c3898bc748ce7985c4e4037b623ea,3559
     pantry-tree:
       size: 2411

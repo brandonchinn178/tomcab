@@ -1,6 +1,7 @@
 resolver: lts-19.16
 
 extra-deps:
+  - tasty-autocollect-0.2.0.0
   - toml-reader-0.1.0.0
 
 ghc-options:

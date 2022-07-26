@@ -61,11 +61,15 @@ auto-import = ["defaults"]
     main-is = "Main.hs"
     other-modules = ["*"]
 
-    ghc-options = ["-F -pgmF=tasty-autocollect"]
+    ghc-options = [
+        "-F",
+        "-pgmF=tasty-autocollect",
+    ]
     build-tool-depends = ["tasty-autocollect:tasty-autocollect"]
 
     build-depends = [
         "base",
+        "tasty",
         "tasty-autocollect",
         "tomcab",
     ]
