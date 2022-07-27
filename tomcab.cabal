@@ -90,6 +90,7 @@ test-suite tomcab-tests
   main-is: Main.hs
   other-modules:
       Tomcab.CabalTest
+    , Tomcab.ResolveTest
   hs-source-dirs:
       test
   build-depends:
