@@ -16,7 +16,7 @@ jobs:
       - uses: actions/cache@v3
         with:
           path: ~/.stack
-          key: ${{ runner.os }}-stack-cache-${{ hashFiles('stack.yaml', 'package.yaml') }}
+          key: ${{ runner.os }}-stack-cache-${{ hashFiles('stack.yaml', 'package.toml') }}
       - name: Build + test
         run: stack test --coverage
 
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/cache@v3
         with:
           path: ~/.stack
-          key: ${{ runner.os }}-check_sdist-${{ hashFiles('stack.yaml', 'package.yaml') }}
+          key: ${{ runner.os }}-check_sdist-${{ hashFiles('stack.yaml', 'package.toml') }}
       - name: Create sdist bundle
         run: stack sdist --test-tarball --tar-dir .
       - uses: actions/upload-artifact@v3
