@@ -3,7 +3,8 @@ version = "0.1.0"
 synopsis = "Generate Cabal files from TOML files"
 description = "Generate Cabal files from TOML files. See README.md for more details."
 
-auto-import = ["defaults"]
+[tomcab]
+    auto-import = ["defaults"]
 
 [common.defaults]
     ghc-options = ["-Wall"]

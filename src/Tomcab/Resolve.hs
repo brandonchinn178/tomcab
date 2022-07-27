@@ -27,6 +27,7 @@ import System.FilePath (makeRelative, splitExtensions)
 import UnliftIO.Exception (Exception (..), fromEither, throwIO)
 
 import Tomcab.Cabal (
+  AutoImportField,
   CabalValue (..),
   CommonStanza (..),
   CommonStanzas,
@@ -41,6 +42,7 @@ import Tomcab.Cabal (
   PackageLibrary (..),
   PackageTestSuite (..),
   TestTypeField,
+  TomcabOptions (..),
  )
 import Tomcab.Cabal.Module (lookupPatternMatch, moduleToPattern, patternToModule)
 import Tomcab.Resolve.Phases
@@ -79,6 +81,7 @@ resolveOptionals Package{..} = do
       , packageLibraries = map coerceLib packageLibraries
       , packageExecutables = map coerceExe packageExecutables
       , packageTestSuites = map resolveTestName packageTestSuites
+      , tomcabOptions = coerceOptions tomcabOptions
       , ..
       }
   where
@@ -95,16 +98,21 @@ resolveAutoImports :: Package PreResolveAutoImports -> IO (Package PostResolveAu
 resolveAutoImports Package{..} =
   pure
     Package
-      { packageAutoImport = unset
-      , packageCommonStanzas = fmap coerceCommonStanza packageCommonStanzas
+      { packageCommonStanzas = fmap coerceCommonStanza packageCommonStanzas
       , packageLibraries = map (coerceLib . modifyBuildInfo addAutoImports) packageLibraries
       , packageExecutables = map (coerceExe . modifyBuildInfo addAutoImports) packageExecutables
       , packageTestSuites = map (coerceTest . modifyBuildInfo addAutoImports) packageTestSuites
+      , tomcabOptions = transitionOptions tomcabOptions
       , ..
       }
   where
     addAutoImports :: PackageBuildInfo PreResolveAutoImports parent -> PackageBuildInfo PreResolveAutoImports parent
-    addAutoImports info = info{packageImport = packageAutoImport ++ packageImport info}
+    addAutoImports info = info{packageImport = tomcabAutoImport tomcabOptions ++ packageImport info}
+
+    transitionOptions _ =
+      TomcabOptions
+        { tomcabAutoImport = unset
+        }
 
 {----- ResolveImports -----}
 
@@ -119,6 +127,7 @@ resolveImports Package{..} = do
       , packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
       , packageTestSuites = packageTestSuites'
+      , tomcabOptions = coerceOptions tomcabOptions
       , ..
       }
   where
@@ -208,6 +217,7 @@ resolveModules Package{..} = do
       { packageLibraries = packageLibraries'
       , packageExecutables = packageExecutables'
       , packageTestSuites = packageTestSuites'
+      , tomcabOptions = coerceOptions tomcabOptions
       , ..
       }
   where
@@ -343,6 +353,16 @@ instance Exception ResolutionError where
     UnknownCommonStanza name -> "Unknown common stanza: " ++ Text.unpack name
 
 {----- Coerce helpers -----}
+
+type CoercibleTomcabOptions phase1 phase2 =
+  ( AutoImportField phase1 ~ AutoImportField phase2
+  )
+
+coerceOptions ::
+  CoercibleTomcabOptions phase1 phase2 =>
+  TomcabOptions phase1 ->
+  TomcabOptions phase2
+coerceOptions TomcabOptions{..} = TomcabOptions{..}
 
 coerceLib ::
   CoerciblePackageBuildInfo phase1 phase2 =>

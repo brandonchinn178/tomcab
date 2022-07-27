@@ -18,6 +18,10 @@ module Tomcab.Cabal (
   ImportField,
   TestTypeField,
 
+  -- * Tomcab options
+  TomcabOptions (..),
+  AutoImportField,
+
   -- * Common stanzas
   CommonStanzas,
   CommonStanza (..),
@@ -66,8 +70,8 @@ data Package (phase :: ResolutionPhase) = Package
   , packageLibraries :: [PackageLibrary phase]
   , packageExecutables :: [PackageExecutable phase]
   , packageTestSuites :: [PackageTestSuite phase]
-  , packageAutoImport :: UnsetFrom 'NoAutoImports phase [Text]
   , packageFields :: CabalFields
+  , tomcabOptions :: TomcabOptions phase
   }
 
 instance DecodeTOML (Package Unresolved) where
@@ -82,7 +86,7 @@ instance DecodeTOML (Package Unresolved) where
         , "library"
         , "executable"
         , "test-suite"
-        , "auto-import"
+        , "tomcab"
         ]
     package <-
       Package
@@ -94,12 +98,29 @@ instance DecodeTOML (Package Unresolved) where
         <*> getField "library"
         <*> getField "executable"
         <*> getField "test-suite"
-        <*> getFieldOr "auto-import" []
         <*> pure Map.empty
+        <*> getFieldOr "tomcab" emptyTomcabOptions
 
     fields <- mapM (applyDecoder tomlDecoder) unused
 
     pure package{packageFields = fields}
+
+type AutoImportField (phase :: ResolutionPhase) = UnsetFrom 'NoAutoImports phase [Text]
+
+data TomcabOptions (phase :: ResolutionPhase) = TomcabOptions
+  { tomcabAutoImport :: AutoImportField phase
+  }
+
+instance DecodeTOML (TomcabOptions Unresolved) where
+  tomlDecoder =
+    TomcabOptions
+      <$> getFieldOr "auto-import" []
+
+emptyTomcabOptions :: TomcabOptions Unresolved
+emptyTomcabOptions =
+  TomcabOptions
+    { tomcabAutoImport = []
+    }
 
 data PackageLibrary (phase :: ResolutionPhase) = PackageLibrary
   { packageLibraryName :: Maybe Text

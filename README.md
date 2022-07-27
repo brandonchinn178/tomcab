@@ -12,7 +12,7 @@ You may also install `tomcab` yourself, in which case you'll need to manually ca
 * Run `stack install tomcab` or `cabal install tomcab`
 * `git clone https://github.com/brandonchinn178/tomcab.git` and build from source
 
-## Usage
+## Documentation
 
 Here's an example `package.toml` file:
 
@@ -116,8 +116,15 @@ Additionally, there are a few extra fields that are supported by `tomcab`:
 | Field         | Description |
 |---------------|-------------|
 | `extends`     | TODO        |
-| `auto-import` | TODO        |
 | `github`      | TODO        |
+
+## Options
+
+Additional options may be set in a `[tomcab]` section:
+
+| Field         | Description |
+|---------------|-------------|
+| `auto-import` | Any common stanzas mentioned in this list will be automatically imported to all library, executable, and test-suite stanzas. |
 
 ## Design
 
