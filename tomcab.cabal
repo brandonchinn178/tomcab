@@ -3,7 +3,11 @@ cabal-version: 1.12
 name: tomcab
 version: 0.1.0
 build-type: Simple
+category: Development
 description: Generate Cabal files from TOML files. See README.md for more details.
+license: BSD3
+license-file: LICENSE.md
+maintainer: Brandon Chinn <brandonchinn178@gmail.com>
 synopsis: Generate Cabal files from TOML files
 
 library
