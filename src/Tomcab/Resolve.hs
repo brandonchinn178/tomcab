@@ -31,6 +31,7 @@ import Tomcab.Cabal (
   CommonStanza (..),
   CommonStanzas,
   Conditional (..),
+  ImportField,
   Module (..),
   ModulePath,
   ModulePattern (..),
@@ -39,6 +40,7 @@ import Tomcab.Cabal (
   PackageExecutable (..),
   PackageLibrary (..),
   PackageTestSuite (..),
+  TestTypeField,
  )
 import Tomcab.Cabal.Module (lookupPatternMatch, moduleToPattern, patternToModule)
 import Tomcab.Resolve.Phases
@@ -364,7 +366,7 @@ coerceExe PackageExecutable{..} =
 
 type CoerciblePackageTestSuite phase1 phase2 =
   ( CoerciblePackageBuildInfo phase1 phase2
-  , NonNullAfterParsed phase1 Text ~ NonNullAfterParsed phase2 Text
+  , TestTypeField phase1 ~ TestTypeField phase2
   )
 
 coerceTest ::
@@ -387,7 +389,7 @@ coerceCommonStanza CommonStanza{..} =
     }
 
 type CoerciblePackageBuildInfo phase1 phase2 =
-  ( UnsetFrom 'NoImports phase1 [Text] ~ UnsetFrom 'NoImports phase2 [Text]
+  ( ImportField phase1 ~ ImportField phase2
   , ModulePath phase1 ~ ModulePath phase2
   )
 

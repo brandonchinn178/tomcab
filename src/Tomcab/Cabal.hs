@@ -15,6 +15,8 @@ module Tomcab.Cabal (
   PackageExecutable (..),
   PackageTestSuite (..),
   Conditional (..),
+  ImportField,
+  TestTypeField,
 
   -- * Common stanzas
   CommonStanzas,
@@ -137,9 +139,11 @@ instance DecodeTOML (PackageExecutable Unresolved) where
 
     pure exe{packageExeInfo = info}
 
+type TestTypeField (phase :: ResolutionPhase) = NonNullAfterParsed phase Text
+
 data PackageTestSuite (phase :: ResolutionPhase) = PackageTestSuite
   { packageTestName :: Maybe Text
-  , packageTestType :: NonNullAfterParsed phase Text
+  , packageTestType :: TestTypeField phase
   , packageTestMainIs :: Maybe Text
   , packageTestInfo :: PackageBuildInfo phase PackageTestSuite
   }
@@ -198,8 +202,10 @@ deriving newtype instance DecodeTOML (CommonStanza Unresolved)
 
 {----- Shared build information -----}
 
+type ImportField (phase :: ResolutionPhase) = UnsetFrom 'NoImports phase [Text]
+
 data PackageBuildInfo (phase :: ResolutionPhase) parent = PackageBuildInfo
-  { packageImport :: UnsetFrom 'NoImports phase [Text]
+  { packageImport :: ImportField phase
   , packageBuildDepends :: [Text]
   , packageOtherModules :: [ModulePath phase]
   , packageHsSourceDirs :: [Text]
